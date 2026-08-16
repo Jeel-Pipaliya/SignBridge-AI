@@ -1,1 +1,0 @@
-"""SignBridge AI source package."""
