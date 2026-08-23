@@ -1,0 +1,45 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dataset / Media (large binary files)
+ai/datasets/raw/
+*.mp4
+*.avi
+*.mov
+
+# Week 2 — trained models (regenerate with train_model.py)
+backend/models/*.pkl
+backend/models/label_classes.npy
+backend/models/confusion_matrix.png
+
+# Week 2 — CSV datasets (regenerate with collect_data.py)
+# Uncomment to exclude dataset from git:
+# backend/data/processed/landmarks.csv
+
+# NumPy sequences — only raw recordings, keep processed ones
+# Uncomment below to exclude all .npy files:
+# *.npy
+
+# OS
+.DS_Store
+Thumbs.db
