@@ -1,19 +1,35 @@
 # Python
-venv/
-.venv/
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
+*$py.class
+*.so
 .Python
-*.egg-info/
-dist/
 build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
 *.egg
 
-# Environment
+# Virtual Environments
+venv/
+.venv/
+ENV/
+env/
+
+# Environment Variables
 .env
 .env.local
+.env.*.local
 
 # IDE
 .vscode/
@@ -21,25 +37,26 @@ build/
 *.swp
 *.swo
 
-# Dataset / Media (large binary files)
-ai/datasets/raw/
-*.mp4
-*.avi
-*.mov
+# Jupyter Notebooks
+.ipynb_checkpoints/
 
-# Week 2 — trained models (regenerate with train_model.py)
-backend/models/*.pkl
-backend/models/label_classes.npy
-backend/models/confusion_matrix.png
-
-# Week 2 — CSV datasets (regenerate with collect_data.py)
-# Uncomment to exclude dataset from git:
-# backend/data/processed/landmarks.csv
-
-# NumPy sequences — only raw recordings, keep processed ones
-# Uncomment below to exclude all .npy files:
-# *.npy
-
-# OS
+# Operating System
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Large Raw Datasets (Users download or collect locally)
+data/raw/**/*.jpg
+data/raw/**/*.png
+data/raw/**/*.mp4
+data/raw/**/*.avi
+
+# Trained Models & Artifacts
+models/*.pkl
+models/*.joblib
+!models/.gitkeep
+
+# Cache & Output Logs
+outputs/plots/*.png
+outputs/confusion_matrix/*.png
+outputs/predictions/*

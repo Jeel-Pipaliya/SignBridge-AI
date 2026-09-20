@@ -1,183 +1,133 @@
 """
-Week 2 -- SignBridge AI
-Unit tests for backend landmark extractor and prediction smoother.
-
-Run:
-    python tests/test_week2.py
+SignBridge AI - Week 2 Automated Test Suite
+Verifies:
+1. Dataset research and vocabulary documentation
+2. Class mapping integrity (12 prototype classes)
+3. EDA plot generation (distribution & sample grid)
+4. ImagePreprocessor pipeline & error handling
+5. Processed feature CSV schema (63 numerical features + label)
+6. Stratified train/val/test partitions (70 / 15 / 15 ratio)
+7. LabelEncoder serialization and bidirectional mapping
 """
 
 import sys
-import os
+import unittest
+from pathlib import Path
 import numpy as np
+import pandas as pd
+import joblib
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+# Ensure project root is on Python path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.preprocessing.landmark_extractor import (
-    extract_landmarks,
-    normalize_landmarks,
-    extract_and_normalize,
-    NUM_FEATURES,
-    NUM_LANDMARKS,
-)
-from backend.recognition.realtime_recognition import PredictionSmoother
-
-
-# ---- Helpers -----------------------------------------------------------------
-
-def _pass(name: str) -> None:
-    print(f"  [OK]  {name}")
+import config
+from data.ingest_dataset import PROTOTYPE_CLASSES, load_class_mapping
+from ai.preprocessing import ImagePreprocessor
+from ai.dataset_loader import DatasetLoader, TRAIN_CSV, VAL_CSV, TEST_CSV
 
 
-def _fail(name: str, reason: str) -> None:
-    print(f"  [!!]  {name} -- {reason}")
-    sys.exit(1)
+class TestWeek2DocumentationAndVocabulary(unittest.TestCase):
+    """Test research documentation and vocabulary definitions."""
+
+    def test_research_docs_exist(self):
+        research_doc = config.DOCS_DIR / "isl_dataset_research.md"
+        vocab_doc = config.DOCS_DIR / "prototype_vocabulary.md"
+        self.assertTrue(research_doc.exists(), "Missing isl_dataset_research.md")
+        self.assertTrue(vocab_doc.exists(), "Missing prototype_vocabulary.md")
+
+    def test_prototype_classes_count(self):
+        self.assertEqual(len(PROTOTYPE_CLASSES), 12)
+        mapping = load_class_mapping()
+        self.assertGreaterEqual(len(mapping), 12)
+        for cls in PROTOTYPE_CLASSES:
+            self.assertIn(cls, mapping)
 
 
-# ---- Fake hand landmark -------------------------------------------------------
+class TestWeek2EDAVisualizations(unittest.TestCase):
+    """Test EDA plot generation."""
 
-class _FakeLM:
-    def __init__(self, x, y, z):
-        self.x, self.y, self.z = x, y, z
-
-
-class _FakeHand:
-    """Simulates a MediaPipe hand landmark object."""
-    def __init__(self, offset=0.0):
-        self.landmark = [
-            _FakeLM(i * 0.05 + offset, i * 0.03, i * 0.01)
-            for i in range(NUM_LANDMARKS)
-        ]
+    def test_plots_exist(self):
+        dist_plot = config.PLOTS_DIR / "class_distribution.png"
+        grid_plot = config.PLOTS_DIR / "sample_grid.png"
+        self.assertTrue(dist_plot.exists(), "Missing class_distribution.png")
+        self.assertTrue(grid_plot.exists(), "Missing sample_grid.png")
+        self.assertGreater(dist_plot.stat().st_size, 0)
+        self.assertGreater(grid_plot.stat().st_size, 0)
 
 
-# ---- Extractor tests ---------------------------------------------------------
+class TestWeek2PreprocessingAndFeatures(unittest.TestCase):
+    """Test batch preprocessing and feature extraction dataset."""
 
-def test_extract_shape():
-    hand = _FakeHand()
-    raw = extract_landmarks(hand)
-    assert raw.shape == (NUM_FEATURES,), f"Wrong shape: {raw.shape}"
-    _pass(f"extract_landmarks() shape == ({NUM_FEATURES},)")
+    def test_preprocessor_blank_image(self):
+        with ImagePreprocessor() as prep:
+            blank = np.zeros((480, 640, 3), dtype=np.uint8)
+            res = prep.process_single_image(blank, label="TEST")
+            self.assertFalse(res.success)
+            self.assertIsNone(res.features)
+            self.assertIn("No hand landmarks", res.error_reason)
 
+    def test_processed_landmarks_csv_schema(self):
+        self.assertTrue(config.LANDMARKS_CSV_PATH.exists())
+        df = pd.read_csv(config.LANDMARKS_CSV_PATH)
 
-def test_extract_dtype():
-    raw = extract_landmarks(_FakeHand())
-    assert raw.dtype == np.float32, f"Wrong dtype: {raw.dtype}"
-    _pass("extract_landmarks() dtype is float32")
+        self.assertGreaterEqual(len(df), 120, "Expected at least 120 samples in processed dataset")
+        self.assertIn("label", df.columns)
 
+        # Count feature columns
+        feat_cols = [c for c in df.columns if c.startswith("lm")]
+        self.assertEqual(len(feat_cols), config.NUM_FEATURES)
 
-def test_normalize_shape():
-    raw = extract_landmarks(_FakeHand())
-    norm = normalize_landmarks(raw)
-    assert norm.shape == (NUM_FEATURES,), f"Wrong shape: {norm.shape}"
-    _pass(f"normalize_landmarks() output shape == ({NUM_FEATURES},)")
-
-
-def test_normalize_range():
-    raw  = extract_landmarks(_FakeHand())
-    norm = normalize_landmarks(raw)
-    max_abs = float(np.max(np.abs(norm)))
-    assert max_abs <= 1.0 + 1e-5, f"Out of range: {max_abs}"
-    _pass(f"normalize_landmarks() values in [-1, 1]  (max={max_abs:.4f})")
+        # Check for NaN / infinite values
+        features_matrix = df[feat_cols].values
+        self.assertFalse(np.isnan(features_matrix).any(), "Found NaN values in feature matrix!")
+        self.assertFalse(np.isinf(features_matrix).any(), "Found Infinite values in feature matrix!")
 
 
-def test_normalize_wrist_at_origin():
-    """After normalization the wrist (landmark 0) should be at (0, 0, 0)."""
-    raw  = extract_landmarks(_FakeHand(offset=0.5))
-    norm = normalize_landmarks(raw)
-    coords = norm.reshape(-1, 3)
-    wrist = coords[0]
-    assert np.allclose(wrist, [0, 0, 0], atol=1e-6), \
-        f"Wrist not at origin: {wrist}"
-    _pass("Wrist landmark is at origin after normalization")
+class TestWeek2StratifiedSplits(unittest.TestCase):
+    """Test stratified split partitions and label encoder."""
 
+    def test_split_files_exist(self):
+        self.assertTrue(TRAIN_CSV.exists(), "Missing train.csv")
+        self.assertTrue(VAL_CSV.exists(), "Missing val.csv")
+        self.assertTrue(TEST_CSV.exists(), "Missing test.csv")
 
-def test_normalize_zeros():
-    zero = np.zeros(NUM_FEATURES, dtype=np.float32)
-    norm = normalize_landmarks(zero)
-    assert np.all(norm == 0), "Zero input should stay zero"
-    _pass("All-zero input stays all-zero after normalization")
+    def test_split_ratios_and_classes(self):
+        df_train = pd.read_csv(TRAIN_CSV)
+        df_val = pd.read_csv(VAL_CSV)
+        df_test = pd.read_csv(TEST_CSV)
 
+        total = len(df_train) + len(df_val) + len(df_test)
+        self.assertGreater(total, 0)
 
-def test_extract_and_normalize_convenience():
-    result = extract_and_normalize(_FakeHand())
-    assert result.shape == (NUM_FEATURES,)
-    assert result.dtype == np.float32
-    _pass("extract_and_normalize() returns correct shape + dtype")
+        # Check ratios approximate 70% / 15% / 15%
+        train_ratio = len(df_train) / total
+        val_ratio = len(df_val) / total
+        test_ratio = len(df_test) / total
 
+        self.assertAlmostEqual(train_ratio, 0.70, delta=0.03)
+        self.assertAlmostEqual(val_ratio, 0.15, delta=0.03)
+        self.assertAlmostEqual(test_ratio, 0.15, delta=0.03)
 
-def test_position_invariance():
-    """
-    Two hands at different positions but same shape should give
-    the same normalized vector.
-    """
-    hand_a = _FakeHand(offset=0.0)
-    hand_b = _FakeHand(offset=0.8)   # shifted
-    norm_a = extract_and_normalize(hand_a)
-    norm_b = extract_and_normalize(hand_b)
-    assert np.allclose(norm_a, norm_b, atol=1e-5), \
-        "Normalization is not position-invariant"
-    _pass("Normalization is position-invariant")
+        # Check classes are present in train, val, and test
+        num_classes = len(df_train["label"].unique())
+        self.assertGreaterEqual(num_classes, 12)
+        self.assertEqual(len(df_val["label"].unique()), num_classes)
+        self.assertEqual(len(df_test["label"].unique()), num_classes)
 
+    def test_label_encoder_bidirectional(self):
+        self.assertTrue(config.LABEL_ENCODER_PATH.exists())
+        le = joblib.load(config.LABEL_ENCODER_PATH)
 
-# ---- Smoother tests ----------------------------------------------------------
-
-def test_smoother_majority_vote():
-    s = PredictionSmoother(window=5)
-    for _ in range(3):
-        s.update("hello")
-    s.update("yes")
-    result = s.update("no")
-    assert result == "hello", f"Expected 'hello', got '{result}'"
-    _pass("PredictionSmoother returns majority vote")
-
-
-def test_smoother_window_size():
-    s = PredictionSmoother(window=3)
-    s.update("hello")
-    s.update("hello")
-    s.update("hello")
-    # now push out old 'hello' entries
-    s.update("stop")
-    s.update("stop")
-    result = s.update("stop")
-    assert result == "stop", f"Window didn't slide: got '{result}'"
-    _pass("PredictionSmoother sliding window works")
-
-
-def test_smoother_reset():
-    s = PredictionSmoother(window=5)
-    for _ in range(5):
-        s.update("hello")
-    s.reset()
-    result = s.update("stop")
-    assert result == "stop", f"Expected 'stop' after reset, got '{result}'"
-    _pass("PredictionSmoother reset() clears history")
-
-
-# ---- Runner ------------------------------------------------------------------
-
-def main():
-    print("=" * 55)
-    print("  SignBridge AI -- Week 2 Tests")
-    print("=" * 55)
-
-    test_extract_shape()
-    test_extract_dtype()
-    test_normalize_shape()
-    test_normalize_range()
-    test_normalize_wrist_at_origin()
-    test_normalize_zeros()
-    test_extract_and_normalize_convenience()
-    test_position_invariance()
-
-    print()
-    test_smoother_majority_vote()
-    test_smoother_window_size()
-    test_smoother_reset()
-
-    print()
-    print("  All Week 2 tests passed!")
-    print("=" * 55)
+        self.assertGreaterEqual(len(le.classes_), 12)
+        encoded = le.transform(["HELLO", "1", "A"])
+        decoded = le.inverse_transform(encoded)
+        self.assertEqual(list(decoded), ["HELLO", "1", "A"])
 
 
 if __name__ == "__main__":
-    main()
+    print("=" * 65)
+    print("  Running SignBridge AI - Week 2 Test Suite")
+    print("=" * 65)
+    unittest.main(verbosity=2)
