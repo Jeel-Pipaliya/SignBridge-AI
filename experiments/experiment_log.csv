@@ -1,2 +1,6 @@
 Experiment ID,Model,Dataset version,Features,Epochs,Learning rate,Validation accuracy,Test accuracy,F1,Notes
 EXP-001,MLPClassifier,ISL-32-Classes-v1,Landmarks-63D-Normalized,100,0.001,0.6905,0.6607,0.6085,Week 4 Baseline ISL Classifier evaluation on 32 classes
+EXP-002,BiLSTMClassifier,Dynamic-ISL-3-Classes-v1,Landmarks-30x63-BiLSTM,25,0.001,0.3333,0.3333,0.1667,"Week 5 Dynamic Gesture Bi-LSTM (HELLO, J, Z)"
+EXP-003,RandomForest_TemporalSummary,Dynamic-ISL-3-Classes-v1,Landmarks-30x63-BiLSTM,100,0.0,0.3556,0.2444,0.2473,Week 5 Baseline Temporal Classifier comparison
+EXP-002,BiLSTMClassifier,Dynamic-ISL-3-Classes-v1,Landmarks-30x63-BiLSTM,30,0.001,1.0000,1.0000,1.0000,"Week 5 Dynamic Gesture Bi-LSTM (HELLO, J, Z)"
+EXP-003,RandomForest_TemporalSummary,Dynamic-ISL-3-Classes-v1,Landmarks-30x63-BiLSTM,100,0.0,1.0000,1.0000,1.0000,Week 5 Baseline Temporal Classifier comparison

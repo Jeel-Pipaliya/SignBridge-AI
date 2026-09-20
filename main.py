@@ -44,23 +44,42 @@ def main() -> None:
         "--mode",
         type=str,
         default="demo",
-        choices=["demo", "collect", "visualize", "train", "evaluate", "stats", "validate", "test"],
+        choices=[
+            "demo", "collect", "visualize", "train", "evaluate", "stats", "validate", "test",
+            "dynamic-collect", "dynamic-train", "dynamic-evaluate", "realtime",
+        ],
         help="Execution mode (default: 'demo')",
     )
     parser.add_argument("--label", type=str, default="HELLO", help="Label for data collection mode")
     parser.add_argument("--samples", type=int, default=30, help="Target samples for collection")
     parser.add_argument("--benchmark", action="store_true", help="Run benchmark mode for real-time engine")
+    parser.add_argument("--lang", type=str, default="en", choices=["en", "hi"], help="Language for speech synthesis (en or hi)")
+    parser.add_argument("--auto-speak", action="store_true", help="Enable automatic speech on recognized sign commit")
+    parser.add_argument("--epochs", type=int, default=None, help="Epochs for training")
 
     args = parser.parse_args()
     print_banner()
 
-    if args.mode == "demo":
+    if args.mode in ("demo", "realtime"):
         from ai.inference.realtime import ISLRealtimeEngine
-        engine = ISLRealtimeEngine()
+        engine = ISLRealtimeEngine(language=args.lang, auto_speak=args.auto_speak)
         if args.benchmark:
             engine.run_benchmark()
         else:
             engine.run()
+
+    elif args.mode == "dynamic-collect":
+        from ai.data_collection.collect_dynamic import DynamicDataCollector
+        collector = DynamicDataCollector(initial_class=args.label, target_sequences=args.samples)
+        collector.run()
+
+    elif args.mode == "dynamic-train":
+        from ai.dynamic.train import run_dynamic_training
+        run_dynamic_training(epochs=args.epochs)
+
+    elif args.mode == "dynamic-evaluate":
+        from ai.dynamic.evaluate import evaluate_dynamic_model
+        evaluate_dynamic_model()
 
     elif args.mode == "collect":
         from data.collect_samples import run_collector

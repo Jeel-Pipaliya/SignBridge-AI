@@ -1,0 +1,21 @@
+{
+  "model_architecture": "BiLSTM",
+  "timestamp": "2026-09-20 23:30:52",
+  "sequence_length": 30,
+  "feature_dim": 63,
+  "classes": [
+    "HELLO",
+    "J",
+    "Z"
+  ],
+  "epochs_trained": 30,
+  "best_val_accuracy": 1.0,
+  "test_accuracy": 1.0,
+  "test_macro_f1": 1.0,
+  "baseline_comparison": {
+    "model": "RandomForest_TemporalSummary",
+    "val_accuracy": 1.0,
+    "test_accuracy": 1.0,
+    "macro_f1": 1.0
+  }
+}

@@ -40,3 +40,47 @@ paths:
   metadata_dir: "models/metadata"
   reports_dir: "reports"
   experiments_file: "experiments/experiment_log.csv"
+
+# Week 5 Dynamic Gesture Recognition
+dynamic:
+  enabled: true
+  sequence_length: 30
+  feature_dimension: 63
+  hidden_size: 128
+  num_layers: 2
+  dropout: 0.3
+  learning_rate: 0.001
+  batch_size: 32
+  epochs: 50
+  confidence_threshold: 0.70
+  inference_interval: 2
+  movement_threshold: 0.02
+  cooldown_seconds: 1.5
+  classes:
+    - HELLO
+    - J
+    - Z
+  paths:
+    raw_dir: "data/dynamic/raw"
+    sequences_dir: "data/dynamic/sequences"
+    processed_dir: "data/dynamic/processed"
+    models_dir: "models/dynamic"
+    best_model: "models/dynamic/bilstm_dynamic.pt"
+    baseline_model: "models/dynamic/baseline_dynamic.pkl"
+    metadata_dir: "models/metadata"
+
+# Week 5 ISL Grammar Correction & Translation
+grammar:
+  enabled: true
+  default_language: "en"
+  supported_languages:
+    - "en"
+    - "hi"
+
+# Week 5 Text-to-Speech (TTS)
+tts:
+  enabled: true
+  default_language: "en"
+  auto_speak: false
+  rate: 150
+  volume: 1.0

@@ -1,17 +1,25 @@
 """
-SignBridge AI - Master Real-Time ISL Recognition Engine (Week 4 Phase 7, 8, 9)
+SignBridge AI - Master Real-Time Recognition & Temporal Speech Engine (Week 5)
+Integrates:
+  1. MediaPipe Hand Landmark Detection
+  2. Multi-Modal Static + Dynamic Fusion Engine (MLP + Bi-LSTM)
+  3. Consecutive & Cooldown Token Accumulation
+  4. ISL Grammar Reconstruction (Natural English)
+  5. Multilingual Translation (English <-> Hindi)
+  6. Offline Text-to-Speech (Non-Blocking Audio Output)
+  7. High-Contrast Accessible Real-Time HUD
+
 Usage:
-    python -m ai.inference.realtime
-    python -m ai.inference.realtime --camera 0 --threshold 0.70
-    python -m ai.inference.realtime --benchmark
+  python -m ai.inference.realtime
+  python -m ai.inference.realtime --camera 0 --threshold 0.70
+  python -m ai.inference.realtime --benchmark
 """
 
 import sys
 import time
 import argparse
 from pathlib import Path
-from typing import Optional, Tuple, Dict
-from collections import deque, Counter
+from typing import Optional, Tuple, Dict, Any, List
 import cv2
 import numpy as np
 
@@ -29,20 +37,25 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import config
 from ai.hand_detection import HandDetector
-from ai.predict import SignPredictor, PredictionResult
+from ai.predict import SignPredictor
+from ai.dynamic.predict import DynamicSignPredictor
+from ai.fusion.recognizer_fusion import StaticDynamicFusionEngine, RecognitionResult
+from ai.fusion.token_buffer import TokenBuffer
+from translation.isl_grammar import ISLGrammarEngine, GrammarResult
+from translation.translator import translate_sentence
+from speech.tts import TextToSpeechEngine
 from ai.utils.logger import setup_logger
 from ai.utils.config import load_config
 from realtime.camera import Camera, CameraError
-from realtime.recognizer import TemporalSmoother, TextAccumulator
 
 logger = setup_logger("RealtimeInference")
 
 
 class ISLRealtimeEngine:
     """
-    Complete Real-Time Indian Sign Language Inference Engine.
+    Complete Real-Time Indian Sign Language Inference and Communication Platform.
     Coordinates camera acquisition, landmark detection, normalized feature extraction,
-    model inference, temporal smoothing, and accessible UI rendering.
+    static/dynamic model fusion, grammar reconstruction, and speech synthesis.
     """
 
     def __init__(
@@ -50,9 +63,13 @@ class ISLRealtimeEngine:
         camera_index: int = 0,
         confidence_threshold: Optional[float] = None,
         smoothing_window: Optional[int] = None,
+        language: str = "en",
+        auto_speak: bool = False,
     ):
         self.cfg = load_config()
         inf_cfg = self.cfg.get("inference", {})
+        dyn_cfg = self.cfg.get("dynamic", {})
+        tts_cfg = self.cfg.get("tts", {})
 
         self.confidence_threshold = (
             confidence_threshold
@@ -65,29 +82,57 @@ class ISLRealtimeEngine:
             else int(inf_cfg.get("smoothing_window", 5))
         )
         self.camera_index = camera_index
+        self.current_language = language
+        self.auto_speak = auto_speak or bool(tts_cfg.get("auto_speak", False))
 
-        logger.info(f"Initializing ISL Real-Time Engine (Threshold: {self.confidence_threshold:.0%}, Window: {self.smoothing_window})")
+        logger.info(
+            f"Initializing ISL Real-Time Engine (Threshold: {self.confidence_threshold:.0%}, "
+            f"Window: {self.smoothing_window}, Lang: {self.current_language})"
+        )
 
-        self.predictor = SignPredictor(confidence_threshold=self.confidence_threshold)
-        self.smoother = TemporalSmoother(window_size=self.smoothing_window)
-        self.accumulator = TextAccumulator(
+        # Predictors & Fusion Engine
+        self.static_predictor = SignPredictor(confidence_threshold=self.confidence_threshold)
+        self.dynamic_predictor = DynamicSignPredictor(
+            confidence_threshold=float(dyn_cfg.get("confidence_threshold", 0.70)),
+            min_motion_energy=float(dyn_cfg.get("movement_threshold", 0.02)),
+        )
+
+        self.fusion_engine = StaticDynamicFusionEngine(
+            static_predictor=self.static_predictor,
+            dynamic_predictor=self.dynamic_predictor,
+            sequence_length=int(dyn_cfg.get("sequence_length", 30)),
+            inference_interval=int(dyn_cfg.get("inference_interval", 2)),
+            dynamic_cooldown_seconds=float(dyn_cfg.get("cooldown_seconds", 1.5)),
+            static_threshold=self.confidence_threshold,
+            dynamic_threshold=float(dyn_cfg.get("confidence_threshold", 0.70)),
+        )
+
+        # Sentence Buffer, Grammar & Speech Modules
+        self.token_buffer = TokenBuffer(
             confirmation_frames=int(inf_cfg.get("consecutive_confirm_frames", 6)),
             debounce_seconds=float(inf_cfg.get("debounce_seconds", 0.8)),
         )
+        self.grammar_engine = ISLGrammarEngine()
+        self.tts_engine = TextToSpeechEngine(
+            default_language=self.current_language,
+            auto_speak=self.auto_speak,
+        )
 
-        self.classes = self.predictor.classes
+        self.classes = self.static_predictor.classes
+        self.last_grammar_result: Optional[GrammarResult] = None
+        self.last_translated_text: str = ""
 
     def process_frame(
         self,
         frame: np.ndarray,
         detector: HandDetector,
-    ) -> Tuple[np.ndarray, Optional[str], float, float, bool]:
+    ) -> Tuple[np.ndarray, RecognitionResult, float, bool]:
         """
-        Process single video frame through the full AI pipeline.
+        Process single video frame through the multi-modal fusion AI pipeline.
+
         Returns:
             annotated_frame: np.ndarray
-            smoothed_sign: Optional[str]
-            confidence: float
+            rec_result: RecognitionResult (type, label, confidence, etc.)
             latency_ms: float
             hand_detected: bool
         """
@@ -97,178 +142,164 @@ class ISLRealtimeEngine:
         annotated_frame, hands = detector.process(frame, draw=True)
         hand_detected = len(hands) > 0
 
-        raw_prediction = None
+        # 2. Static + Dynamic Fusion Processing
         if hand_detected:
-            # 2. Extract 63D invariant normalized features and infer
             primary_hand = hands[0]
-            raw_prediction = self.predictor.predict_landmarks(primary_hand.landmark_list)
-
-        # 3. Temporal Stabilization & Confidence Filtering
-        if raw_prediction is not None and raw_prediction.is_valid:
-            smoothed_sign, conf = self.smoother.update(raw_prediction)
+            rec_result = self.fusion_engine.process_landmarks(primary_hand.landmark_list)
         else:
-            smoothed_sign, conf = self.smoother.update(
-                PredictionResult("...", "...", 0.0, False, {})
-            )
+            rec_result = self.fusion_engine.process_landmarks(None)
 
-        # 4. Text Accumulation & Debounce
-        if smoothed_sign != "...":
-            self.accumulator.update(smoothed_sign)
+        # 3. Token Formation & Sentence Accumulation
+        if rec_result.is_stable and rec_result.label != "...":
+            committed = self.token_buffer.update(
+                token=rec_result.label,
+                confidence=rec_result.confidence,
+                source=rec_result.type,
+            )
+            if committed is not None:
+                # Update grammar reconstruction on new token
+                self.last_grammar_result = self.grammar_engine.process(self.token_buffer.get_tokens())
+                if self.current_language == "hi":
+                    self.last_translated_text = translate_sentence(self.last_grammar_result.corrected_text, target_language="hi")
+                else:
+                    self.last_translated_text = self.last_grammar_result.corrected_text
+
+                # Auto-speak if enabled
+                if self.auto_speak:
+                    self.tts_engine.speak(self.last_translated_text, language=self.current_language)
 
         t_end = time.perf_counter()
         latency_ms = (t_end - t_start) * 1000.0
 
-        return annotated_frame, smoothed_sign, conf, latency_ms, hand_detected
+        return annotated_frame, rec_result, latency_ms, hand_detected
+
+    def finalize_and_speak(self) -> None:
+        """Finalize the current sentence, reconstruct natural grammar, and speak."""
+        tokens = self.token_buffer.get_tokens()
+        if not tokens:
+            return
+
+        self.last_grammar_result = self.grammar_engine.process(tokens)
+        english_text = self.last_grammar_result.corrected_text
+        if self.current_language == "hi":
+            speak_text = translate_sentence(english_text, target_language="hi")
+            self.last_translated_text = speak_text
+        else:
+            speak_text = english_text
+            self.last_translated_text = english_text
+
+        print(f"\n[FINALIZED SENTENCE] {speak_text}")
+        self.tts_engine.speak(speak_text, language=self.current_language)
 
     def draw_hud(
         self,
         frame: np.ndarray,
-        sign: str,
-        confidence: float,
+        result: RecognitionResult,
         fps: float,
         latency_ms: float,
         hand_detected: bool,
     ) -> np.ndarray:
         """
-        Renders high-contrast, accessible HUD overlay.
+        Renders rich, high-contrast, accessible HUD overlay displaying multimodal diagnostics.
         """
         h, w = frame.shape[:2]
 
         # Top Header Bar (Translucent Dark Charcoal)
         header_bar = frame.copy()
-        cv2.rectangle(header_bar, (0, 0), (w, 85), (20, 24, 30), -1)
-        cv2.addWeighted(header_bar, 0.80, frame, 0.20, 0, frame)
+        cv2.rectangle(header_bar, (0, 0), (w, 105), (18, 22, 28), -1)
+        cv2.addWeighted(header_bar, 0.85, frame, 0.15, 0, frame)
 
         # Title
         cv2.putText(
             frame,
-            "SIGNBRIDGE AI — Real-Time ISL Recognition",
-            (15, 30),
+            "SIGNBRIDGE AI — Real-Time Multimodal ISL Platform (Week 5)",
+            (15, 28),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.70,
+            0.65,
             (0, 220, 255),
             2,
             cv2.LINE_AA,
         )
 
-        # Diagnostics: FPS & Latency
-        diag_text = f"FPS: {fps:.1f} | Latency: {latency_ms:.1f} ms"
+        # Diagnostics: FPS, Latency & Language
+        lang_str = f"Lang: {self.current_language.upper()}"
+        diag_text = f"FPS: {fps:.1f} | Latency: {latency_ms:.1f} ms | {lang_str}"
         cv2.putText(
             frame,
             diag_text,
-            (w - 290, 30),
+            (w - 380, 28),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
+            0.50,
             (0, 255, 120),
             2,
             cv2.LINE_AA,
         )
 
-        # Hand Tracking Status Indicator (Accessible text + color dot)
+        # Hand Detection & TTS Status
         if hand_detected:
             status_color = (0, 255, 0)
-            status_str = "[HAND DETECTED]"
+            status_str = "[HAND READY]"
         else:
             status_color = (120, 120, 120)
             status_str = "[NO HAND DETECTED]"
 
-        cv2.putText(
-            frame,
-            status_str,
-            (15, 68),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.60,
-            status_color,
-            2,
-            cv2.LINE_AA,
-        )
+        tts_str = "[TTS ON]" if self.auto_speak else "[TTS MANUAL]"
+        cv2.putText(frame, f"{status_str}  {tts_str}", (15, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.50, status_color, 1, cv2.LINE_AA)
 
-        # Main Sign Display & Confidence
-        if hand_detected and sign != "...":
-            display_sign = sign
-            sign_color = (0, 255, 0) if confidence >= self.confidence_threshold else (0, 200, 255)
-            conf_str = f"Conf: {confidence:.0%}"
+        # Sign Display & Modality
+        if hand_detected and result.label != "...":
+            display_sign = result.label
+            modality_str = f"[{result.type}]"
+            sign_color = (0, 255, 0) if result.type == "DYNAMIC" else (0, 230, 255)
+            conf_str = f"Conf: {result.confidence:.0%}"
         elif hand_detected:
             display_sign = "IDENTIFYING..."
+            modality_str = "[SCANNING]"
             sign_color = (0, 200, 255)
             conf_str = f"Threshold: {self.confidence_threshold:.0%}"
         else:
-            display_sign = "WAITING FOR HAND..."
-            sign_color = (160, 160, 160)
+            display_sign = "WAITING FOR SIGN..."
+            modality_str = "[IDLE]"
+            sign_color = (150, 150, 150)
             conf_str = "No Signal"
 
-        cv2.putText(
-            frame,
-            f"Sign: {display_sign}",
-            (250, 68),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.75,
-            sign_color,
-            2,
-            cv2.LINE_AA,
-        )
-        cv2.putText(
-            frame,
-            conf_str,
-            (w - 200, 68),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.60,
-            (255, 255, 255),
-            2,
-            cv2.LINE_AA,
-        )
+        cv2.putText(frame, f"Sign: {display_sign} {modality_str}", (15, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.70, sign_color, 2, cv2.LINE_AA)
+        cv2.putText(frame, conf_str, (w - 220, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
 
-        # Bottom Sentence Text Accumulator Bar
+        # Bottom Sentence & Grammar Panel
         bot_bar = frame.copy()
-        cv2.rectangle(bot_bar, (0, h - 80), (w, h), (16, 20, 26), -1)
-        cv2.addWeighted(bot_bar, 0.85, frame, 0.15, 0, frame)
+        cv2.rectangle(bot_bar, (0, h - 110), (w, h), (14, 18, 24), -1)
+        cv2.addWeighted(bot_bar, 0.90, frame, 0.10, 0, frame)
 
-        accum_text = self.accumulator.get_text()
-        cv2.putText(
-            frame,
-            "Accumulated Sentence:",
-            (15, h - 52),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.50,
-            (180, 180, 180),
-            1,
-            cv2.LINE_AA,
-        )
-        cv2.putText(
-            frame,
-            accum_text if accum_text else "...",
-            (15, h - 20),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.85,
-            (255, 255, 255),
-            2,
-            cv2.LINE_AA,
-        )
+        # Raw Token Stream
+        raw_tokens = self.token_buffer.get_text()
+        cv2.putText(frame, f"ISL Tokens: {raw_tokens if raw_tokens else '...'}", (15, h - 80), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (180, 180, 180), 1, cv2.LINE_AA)
 
-        # Controls Hint
-        controls = "[SPACE] Add Space | [BACKSPACE] Delete | [C] Clear | [Q] Quit"
-        cv2.putText(
-            frame,
-            controls,
-            (w - 430, h - 15),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.45,
-            (150, 150, 150),
-            1,
-            cv2.LINE_AA,
-        )
+        # Corrected Natural Sentence
+        if self.last_grammar_result and self.last_grammar_result.corrected_text:
+            corrected_display = self.last_grammar_result.corrected_text
+        else:
+            corrected_display = "..."
+        cv2.putText(frame, f"English: \"{corrected_display}\"", (15, h - 50), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
+
+        # Hindi Translation (if available)
+        if self.last_translated_text and self.current_language == "hi":
+            # Note: OpenCV putText has limited UTF-8 devanagari glyph support; show label or romanized status
+            cv2.putText(frame, f"Hindi: [Voice Output Active]", (15, h - 22), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 220, 255), 1, cv2.LINE_AA)
+        else:
+            cv2.putText(frame, "Controls: [ENTER] Speak | [SPACE] Space | [BACKSPACE] Del | [C] Clear | [T] TTS | [L] Lang | [Q] Quit", (15, h - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (140, 140, 140), 1, cv2.LINE_AA)
 
         return frame
 
     def run(self) -> None:
         """Launch interactive webcam recognition loop."""
-        print("=" * 65)
-        print("  SIGNBRIDGE AI — Real-Time Indian Sign Language Recognition")
-        print("  Webcam Pipeline: Hands -> Normalization -> Classifier -> HUD")
-        print("=" * 65)
+        print("=" * 68)
+        print("  SIGNBRIDGE AI — Real-Time Multimodal Recognition & Speech (Week 5)")
+        print("  Pipeline: Camera -> MediaPipe -> Static/Dynamic Fusion -> Grammar -> TTS")
+        print("=" * 68)
         print("Loading AI models...")
 
-        window_name = "SignBridge AI — Live ISL Recognition (Week 4)"
+        window_name = "SignBridge AI — Live Multimodal Recognition (Week 5)"
         cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
 
         try:
@@ -280,12 +311,11 @@ class ISLRealtimeEngine:
                         print("[Warning] Could not read frame from camera.")
                         break
 
-                    annotated, sign, conf, latency, hand_detected = self.process_frame(frame, detector)
+                    annotated, result, latency, hand_detected = self.process_frame(frame, detector)
 
                     hud_frame = self.draw_hud(
                         frame=annotated,
-                        sign=sign or "...",
-                        confidence=conf,
+                        result=result,
                         fps=cam.fps,
                         latency_ms=latency,
                         hand_detected=hand_detected,
@@ -297,12 +327,27 @@ class ISLRealtimeEngine:
                     if key in (ord("q"), ord("Q"), 27):
                         print("Exiting real-time session...")
                         break
+                    elif key in (13, 10):  # ENTER
+                        self.finalize_and_speak()
                     elif key == 32:  # SPACE
-                        self.accumulator.add_space()
+                        self.token_buffer.add_space()
                     elif key in (8, 127):  # BACKSPACE
-                        self.accumulator.backspace()
+                        self.token_buffer.backspace()
+                        if self.token_buffer.get_tokens():
+                            self.last_grammar_result = self.grammar_engine.process(self.token_buffer.get_tokens())
+                        else:
+                            self.last_grammar_result = None
+                            self.last_translated_text = ""
                     elif key in (ord("c"), ord("C")):
-                        self.accumulator.clear()
+                        self.token_buffer.clear()
+                        self.last_grammar_result = None
+                        self.last_translated_text = ""
+                    elif key in (ord("t"), ord("T")):
+                        self.auto_speak = not self.auto_speak
+                        print(f"[TTS TOGGLE] Auto-Speak set to: {self.auto_speak}")
+                    elif key in (ord("l"), ord("L")):
+                        self.current_language = "hi" if self.current_language == "en" else "en"
+                        print(f"[LANG TOGGLE] Active Language set to: {self.current_language.upper()}")
 
         except CameraError as err:
             print(f"\n[CAMERA ERROR] {err}")
@@ -310,44 +355,74 @@ class ISLRealtimeEngine:
         except KeyboardInterrupt:
             print("\nSession interrupted by user.")
         finally:
+            self.tts_engine.shutdown()
             cv2.destroyAllWindows()
             print("SignBridge AI session terminated cleanly.")
 
     def run_benchmark(self, num_frames: int = 50) -> Dict[str, float]:
         """
-        Headless benchmark verifying pipeline latency and throughput.
+        Headless benchmark verifying pipeline latency, static/dynamic inference time,
+        and throughput.
         """
-        print(f"\nRunning headless benchmark on {num_frames} synthetic frames...")
+        print(f"\nRunning Week 5 headless multimodal benchmark on {num_frames} frames...")
         latencies = []
-        dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        static_latencies = []
+        dynamic_latencies = []
 
+        dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        dummy_seq = np.random.randn(30, 63).astype(np.float32)
+        dummy_feat = np.random.randn(63).astype(np.float32)
+
+        # Measure static model latency
+        for _ in range(num_frames):
+            t0 = time.perf_counter()
+            _ = self.static_predictor.predict_features(dummy_feat)
+            static_latencies.append((time.perf_counter() - t0) * 1000.0)
+
+        # Measure dynamic model latency
+        if self.dynamic_predictor.is_ready:
+            for _ in range(num_frames):
+                t0 = time.perf_counter()
+                _ = self.dynamic_predictor.predict_sequence(dummy_seq)
+                dynamic_latencies.append((time.perf_counter() - t0) * 1000.0)
+
+        # Measure full camera + detection + fusion pipeline latency
         with HandDetector() as detector:
             for _ in range(num_frames):
                 t0 = time.perf_counter()
-                _, _, _, lat, _ = self.process_frame(dummy_frame, detector)
+                _, _, lat, _ = self.process_frame(dummy_frame, detector)
                 latencies.append(lat)
 
         avg_latency = float(np.mean(latencies))
         p95_latency = float(np.percentile(latencies, 95))
         effective_fps = 1000.0 / avg_latency if avg_latency > 0 else 0.0
 
-        print(f"Benchmark Results:")
-        print(f"  • Average Latency: {avg_latency:.2f} ms")
-        print(f"  • 95th Percentile: {p95_latency:.2f} ms")
-        print(f"  • Throughput:      {effective_fps:.1f} FPS")
+        avg_static_ms = float(np.mean(static_latencies))
+        avg_dynamic_ms = float(np.mean(dynamic_latencies)) if dynamic_latencies else 0.0
+
+        print(f"\nWeek 5 Benchmark Results:")
+        print(f"  • Static Model Latency:  {avg_static_ms:.2f} ms")
+        print(f"  • Dynamic Model Latency: {avg_dynamic_ms:.2f} ms")
+        print(f"  • Total Pipeline Latency:{avg_latency:.2f} ms")
+        print(f"  • 95th Percentile:       {p95_latency:.2f} ms")
+        print(f"  • Effective Throughput:  {effective_fps:.1f} FPS")
 
         return {
-            "avg_latency_ms": avg_latency,
+            "avg_static_ms": avg_static_ms,
+            "avg_dynamic_ms": avg_dynamic_ms,
+            "avg_pipeline_latency_ms": avg_latency,
             "p95_latency_ms": p95_latency,
             "effective_fps": effective_fps,
         }
 
 
 def main():
-    parser = argparse.ArgumentParser(description="SignBridge AI Real-Time Recognition")
+    parser = argparse.ArgumentParser(description="SignBridge AI Real-Time Recognition (Week 5)")
     parser.add_argument("--camera", type=int, default=0, help="Camera device index")
     parser.add_argument("--threshold", type=float, default=None, help="Confidence threshold (0.0 - 1.0)")
     parser.add_argument("--window", type=int, default=None, help="Smoothing window size")
+    parser.add_argument("--lang", type=str, default="en", choices=["en", "hi"], help="Default speech language (en or hi)")
+    parser.add_argument("--auto-speak", action="store_true", help="Enable automatic speech on committed signs")
     parser.add_argument("--benchmark", action="store_true", help="Run latency/FPS benchmark without opening camera")
 
     args = parser.parse_args()
@@ -356,6 +431,8 @@ def main():
         camera_index=args.camera,
         confidence_threshold=args.threshold,
         smoothing_window=args.window,
+        language=args.lang,
+        auto_speak=args.auto_speak,
     )
 
     if args.benchmark:

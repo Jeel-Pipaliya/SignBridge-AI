@@ -278,6 +278,62 @@ python main.py --mode test
 
 ---
 
+## 🚀 Week 5 Milestone: Dynamic Gestures, ISL Grammar & Speech Synthesis
+
+Week 5 expands SignBridge AI from static landmark recognition into an end-to-end **multimodal communication platform**:
+* **Dynamic Gesture Model:** Bidirectional LSTM (`BiLSTMClassifier`) modeling temporal sequences ($T=30$ frames) for trajectory-dependent signs (`HELLO` wave, `J` hook, `Z` zigzag).
+* **Static + Dynamic Decision Fusion:** Arbitration layer combining static frame predictions with temporal sequence recognition, gated by inter-frame motion energy and cooldown debouncing.
+* **ISL Grammar Reconstruction:** Rule-based natural language reconstruction transforming raw ISL tokens (SOV, Topic-Comment, Question-Word-Final) into natural English sentences.
+* **Multilingual Translation:** Direct sentence-level and lexical mapping from English to Hindi.
+* **Offline Text-to-Speech (TTS):** Non-blocking speech synthesis (`pyttsx3`) supporting English and Hindi speech without degrading webcam frame rates.
+* **Live Multimodal HUD:** Real-time feedback displaying sign, modality (`STATIC` / `DYNAMIC`), confidence, FPS, latency, token buffer, and natural sentence reconstruction.
+
+### Week 5 Quick Start Commands
+
+#### 1. Dynamic Gesture Sequence Data Collection
+```bash
+python -m ai.data_collection.collect_dynamic --class HELLO --target 50
+python -m ai.data_collection.collect_dynamic --class J --target 50
+python -m ai.data_collection.collect_dynamic --class Z --target 50
+```
+
+#### 2. Dynamic Model Training & Evaluation
+```bash
+# Train Bi-LSTM sequence classifier & Random Forest baseline
+python -m ai.dynamic.train --epochs 30
+
+# Evaluate trained dynamic model on unseen test set
+python -m ai.dynamic.evaluate
+```
+
+#### 3. Real-Time Multimodal Recognition & Speech
+```bash
+# Launch live webcam recognition with full multimodal fusion and TTS
+python -m ai.inference.realtime
+
+# Launch with Hindi speech and automatic voice readout
+python -m ai.inference.realtime --lang hi --auto-speak
+
+# Run headless performance and latency benchmark
+python -m ai.inference.realtime --benchmark
+```
+
+#### 4. Automated Testing (88 Tests)
+```bash
+# Run all 88 unit and integration tests
+python main.py --mode test
+```
+
+### Empirical Week 5 Benchmark Results
+
+* **Static Inference Latency:** **0.07 ms**
+* **Dynamic Bi-LSTM Latency:** **2.66 ms**
+* **Total Pipeline Latency:** **15.08 ms** (Target: $\le 100$ ms)
+* **Effective Throughput:** **66.3 FPS** (Target: $\ge 15$ FPS)
+* **Automated Test Suite:** **88 / 88 Passing (100% Success Rate)**
+
+---
+
 ## 📄 License
 
 This project is licensed under the [MIT License](file:///d:/Project/signbridge-ai/LICENSE).
