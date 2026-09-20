@@ -1,84 +1,25 @@
 """
-DAY 5 — SignBridge AI
-Landmark Extractor: converts a MediaPipe Holistic result into a flat NumPy vector.
-
-Feature layout (225 values total):
-  Left  Hand → 21 landmarks × 3 (x, y, z) =  63 values
-  Right Hand → 21 landmarks × 3 (x, y, z) =  63 values
-  Pose       → 33 landmarks × 3 (x, y, z) =  99 values
-  ─────────────────────────────────────────
-  Total                                     = 225 values
-
-Missing detections are filled with zeros so the vector always has fixed length.
+SignBridge AI - Hand Landmark Extractor Module (Week 4 Phase 2)
+Extracts raw and normalized coordinates from MediaPipe hand detection results.
+Supports single-hand (63D), dual-hand (126D), and holistic inputs with safe zero-handling.
 """
 
+from typing import Any, List, Optional, Tuple, Union
 import numpy as np
-from typing import Any
 
+from ai.preprocessing.normalization import normalize_landmarks
 
-# ─── Constants ────────────────────────────────────────────────────────────────
-NUM_HAND_LANDMARKS: int = 21      # MediaPipe Hands gives 21 landmarks/hand
-NUM_POSE_LANDMARKS: int = 33      # MediaPipe Pose gives 33 landmarks
-HAND_FEATURES: int = NUM_HAND_LANDMARKS * 3   # 63
-POSE_FEATURES: int = NUM_POSE_LANDMARKS * 3   # 99
+NUM_LANDMARKS_PER_HAND: int = 21
+COORDS_PER_LANDMARK: int = 3
+SINGLE_HAND_FEATURES: int = NUM_LANDMARKS_PER_HAND * COORDS_PER_LANDMARK  # 63
+DUAL_HAND_FEATURES: int = SINGLE_HAND_FEATURES * 2                       # 126
+
+# Backwards compatibility constants
+NUM_HAND_LANDMARKS: int = 21
+NUM_POSE_LANDMARKS: int = 33
+HAND_FEATURES: int = SINGLE_HAND_FEATURES
+POSE_FEATURES: int = NUM_POSE_LANDMARKS * 3  # 99
 TOTAL_FEATURES: int = HAND_FEATURES * 2 + POSE_FEATURES  # 225
-
-
-# ─── Internal helpers ─────────────────────────────────────────────────────────
-
-def _hand_to_array(hand_landmarks) -> np.ndarray:
-    """Convert a hand LandmarkList to a (63,) float32 array."""
-    data = []
-    for lm in hand_landmarks.landmark:
-        data.extend([lm.x, lm.y, lm.z])
-    return np.array(data, dtype=np.float32)
-
-
-def _pose_to_array(pose_landmarks) -> np.ndarray:
-    """
-    Convert pose LandmarkList to a (99,) float32 array.
-    Uses only x, y, z — visibility is intentionally excluded to keep
-    the feature vector consistent regardless of detection confidence.
-    """
-    data = []
-    for lm in pose_landmarks.landmark:
-        data.extend([lm.x, lm.y, lm.z])
-    return np.array(data, dtype=np.float32)
-
-
-# ─── Public API ───────────────────────────────────────────────────────────────
-
-def extract_landmarks(results: Any) -> np.ndarray:
-    """
-    Extract a fixed-length (225,) landmark vector from a MediaPipe
-    Holistic result object.
-
-    Args:
-        results: The return value of holistic.process(rgb_frame).
-
-    Returns:
-        np.ndarray of shape (225,) and dtype float32.
-        Sections with no detected body part are zero-filled.
-    """
-    # Left hand (63 values)
-    if results.left_hand_landmarks:
-        left_hand = _hand_to_array(results.left_hand_landmarks)
-    else:
-        left_hand = np.zeros(HAND_FEATURES, dtype=np.float32)
-
-    # Right hand (63 values)
-    if results.right_hand_landmarks:
-        right_hand = _hand_to_array(results.right_hand_landmarks)
-    else:
-        right_hand = np.zeros(HAND_FEATURES, dtype=np.float32)
-
-    # Pose (99 values)
-    if results.pose_landmarks:
-        pose = _pose_to_array(results.pose_landmarks)
-    else:
-        pose = np.zeros(POSE_FEATURES, dtype=np.float32)
-
-    return np.concatenate([left_hand, right_hand, pose])
 
 
 def feature_summary() -> dict:
@@ -89,3 +30,92 @@ def feature_summary() -> dict:
         "pose":        {"landmarks": NUM_POSE_LANDMARKS, "features": POSE_FEATURES},
         "total":       TOTAL_FEATURES,
     }
+
+
+def extract_landmarks_from_hand(hand_landmarks: Any) -> np.ndarray:
+    """
+    Extracts raw (x, y, z) coordinates from a single MediaPipe NormalizedLandmarkList.
+    Returns: np.ndarray of shape (63,), dtype float32.
+    """
+    if hand_landmarks is None:
+        return np.zeros(SINGLE_HAND_FEATURES, dtype=np.float32)
+
+    coords: List[float] = []
+    # If it's a MediaPipe NormalizedLandmarkList with .landmark attribute
+    if hasattr(hand_landmarks, "landmark"):
+        for lm in hand_landmarks.landmark:
+            coords.extend([lm.x, lm.y, lm.z])
+    # If it's already an iterable/list of 3D points
+    elif isinstance(hand_landmarks, (list, tuple, np.ndarray)):
+        arr = np.asarray(hand_landmarks, dtype=np.float32).flatten()
+        if arr.size == SINGLE_HAND_FEATURES:
+            return arr
+        elif arr.size == 0:
+            return np.zeros(SINGLE_HAND_FEATURES, dtype=np.float32)
+        else:
+            coords = list(arr[:SINGLE_HAND_FEATURES])
+            while len(coords) < SINGLE_HAND_FEATURES:
+                coords.append(0.0)
+
+    return np.array(coords, dtype=np.float32)
+
+
+def extract_dual_hand_landmarks(multi_hand_landmarks: Optional[List[Any]]) -> np.ndarray:
+    """
+    Extracts 126-dimensional vector for two hands: [Hand 1 (63D), Hand 2 (63D)].
+    If fewer than 2 hands are detected, remaining slots are zero-filled.
+    """
+    vector = np.zeros(DUAL_HAND_FEATURES, dtype=np.float32)
+    if not multi_hand_landmarks:
+        return vector
+
+    # Hand 1
+    if len(multi_hand_landmarks) >= 1 and multi_hand_landmarks[0] is not None:
+        vector[:SINGLE_HAND_FEATURES] = extract_landmarks_from_hand(multi_hand_landmarks[0])
+
+    # Hand 2
+    if len(multi_hand_landmarks) >= 2 and multi_hand_landmarks[1] is not None:
+        vector[SINGLE_HAND_FEATURES:] = extract_landmarks_from_hand(multi_hand_landmarks[1])
+
+    return vector
+
+
+def extract_landmarks(results: Any) -> np.ndarray:
+    """
+    Universal landmark extraction adapter:
+    Handles MediaPipe Hands results (.multi_hand_landmarks) or MediaPipe Holistic results.
+    """
+    if results is None:
+        return np.zeros(SINGLE_HAND_FEATURES, dtype=np.float32)
+
+    # 1. MediaPipe Hands results object
+    if hasattr(results, "multi_hand_landmarks"):
+        hands = results.multi_hand_landmarks
+        if hands and len(hands) > 0:
+            return extract_landmarks_from_hand(hands[0])
+        return np.zeros(SINGLE_HAND_FEATURES, dtype=np.float32)
+
+    # 2. MediaPipe Holistic results object
+    if hasattr(results, "right_hand_landmarks") or hasattr(results, "left_hand_landmarks"):
+        right = extract_landmarks_from_hand(getattr(results, "right_hand_landmarks", None))
+        left = extract_landmarks_from_hand(getattr(results, "left_hand_landmarks", None))
+        # Default to whichever hand is non-zero
+        if np.any(right):
+            return right
+        elif np.any(left):
+            return left
+        return np.zeros(SINGLE_HAND_FEATURES, dtype=np.float32)
+
+    # 3. Direct landmark list
+    return extract_landmarks_from_hand(results)
+
+
+def extract_and_normalize(hand_landmarks: Any) -> np.ndarray:
+    """
+    Convenience function: extracts raw coordinates and normalizes them.
+    If no landmarks are detected, returns zero-filled vector.
+    """
+    raw = extract_landmarks_from_hand(hand_landmarks)
+    if not np.any(raw):
+        return np.zeros(SINGLE_HAND_FEATURES, dtype=np.float32)
+    return normalize_landmarks(raw)

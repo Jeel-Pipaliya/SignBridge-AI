@@ -219,12 +219,62 @@ python -m unittest tests/test_week1.py tests/test_week2.py tests/test_week3.py
 
 ---
 
-## 🚀 Future Roadmap (Weeks 4+)
+## 🎯 Week 4 Milestone: 32-Class ISL Recognition & Real-Time Pipeline
 
-1. **Continuous Sign & Sentence Recognition:** Transition from frame-level classification to temporal sequence models (CNN-LSTM / Spatial-Temporal GCN).
-2. **ISL Grammar Engine:** Syntax reordering from ISL (Object-Subject-Verb) to standard English/Hindi grammar.
-3. **Speech & Multilingual Synthesis:** Text-to-Speech (TTS) integration with Indian accent synthesis and regional Indian languages.
-4. **Web & Mobile Interface:** Interactive web interface with audio output and gesture practice gamification.
+Week 4 scales the prototype from 12 to **32 full Indian Sign Language classes** (`1`–`5`, `A`–`Z`, `HELLO`), incorporating an end-to-end modular pipeline, automated dataset validation, YAML configuration, Multi-Layer Perceptron neural network architecture, and a low-latency real-time inference loop.
+
+### Quick Start Commands
+
+#### 1. Installation
+```bash
+pip install -r requirements.txt
+```
+
+#### 2. Dataset Verification & Quality Audit
+```bash
+# Compute comprehensive dataset statistics and class distribution
+python -m ai.data_analysis.dataset_statistics
+
+# Run automated data health and corruption check
+python -m ai.data_analysis.validate_dataset
+```
+
+#### 3. Model Training
+```bash
+# Train candidate classifiers (MLP Neural Net, SVM, Random Forest) with YAML configuration
+python -m ai.training.train
+```
+
+#### 4. Model Evaluation & Diagnostics
+```bash
+# Run test set evaluation, generate confusion matrix & classification report
+python -m ai.evaluation.evaluate
+```
+
+#### 5. Real-Time Webcam Recognition
+```bash
+# Launch live webcam recognition with temporal stabilization & HUD
+python -m ai.inference.realtime
+
+# Run headless latency & FPS benchmark
+python -m ai.inference.realtime --benchmark
+```
+
+#### 6. Automated Testing
+```bash
+# Run all 48 automated unit and integration tests
+python main.py --mode test
+```
+
+### Empirical Week 4 Results
+
+* **Vocabulary:** 32 ISL Classes (`1`–`5`, `A`–`Z`, `HELLO`)
+* **Dataset:** 1,120 balanced landmark samples (784 train / 168 val / 168 test)
+* **Champion Model:** Multi-Layer Perceptron (`MLP_NeuralNet` — Dense(128, ReLU) -> Dense(64, ReLU) -> Softmax(32))
+* **Test Accuracy:** **66.07%** across 32 classes
+* **Real-Time Latency:** **13.2 ms** per frame
+* **Throughput:** **75+ FPS** on standard CPU
+* **Confidence Gate:** 0.70 threshold with 5-frame sliding-window temporal smoothing
 
 ---
 

@@ -60,3 +60,6 @@ models/*.joblib
 outputs/plots/*.png
 outputs/confusion_matrix/*.png
 outputs/predictions/*
+data/landmarks/**/*.npy
+models/checkpoints/*.pkl
+models/best/*.pkl

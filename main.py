@@ -44,18 +44,23 @@ def main() -> None:
         "--mode",
         type=str,
         default="demo",
-        choices=["demo", "collect", "visualize", "train", "evaluate", "test"],
+        choices=["demo", "collect", "visualize", "train", "evaluate", "stats", "validate", "test"],
         help="Execution mode (default: 'demo')",
     )
     parser.add_argument("--label", type=str, default="HELLO", help="Label for data collection mode")
     parser.add_argument("--samples", type=int, default=30, help="Target samples for collection")
+    parser.add_argument("--benchmark", action="store_true", help="Run benchmark mode for real-time engine")
 
     args = parser.parse_args()
     print_banner()
 
     if args.mode == "demo":
-        from realtime.realtime_demo import run_realtime_recognition
-        run_realtime_recognition()
+        from ai.inference.realtime import ISLRealtimeEngine
+        engine = ISLRealtimeEngine()
+        if args.benchmark:
+            engine.run_benchmark()
+        else:
+            engine.run()
 
     elif args.mode == "collect":
         from data.collect_samples import run_collector
@@ -66,17 +71,25 @@ def main() -> None:
         run_landmark_visualizer()
 
     elif args.mode == "train":
-        from ai.train import run_training
+        from ai.training.train import run_training
         run_training()
 
     elif args.mode == "evaluate":
-        from ai.evaluate import evaluate_trained_model
-        evaluate_trained_model()
+        from ai.evaluation.evaluate import evaluate_model
+        evaluate_model()
+
+    elif args.mode == "stats":
+        from ai.data_analysis.dataset_statistics import compute_dataset_statistics
+        compute_dataset_statistics()
+
+    elif args.mode == "validate":
+        from ai.data_analysis.validate_dataset import validate_dataset
+        validate_dataset()
 
     elif args.mode == "test":
         import unittest
         loader = unittest.TestLoader()
-        suite = loader.discover(start_dir=str(config.PROJECT_ROOT / "tests"), pattern="test_week*.py")
+        suite = loader.discover(start_dir=str(config.PROJECT_ROOT / "tests"), pattern="test_*.py")
         runner = unittest.TextTestRunner(verbosity=2)
         result = runner.run(suite)
         if not result.wasSuccessful():

@@ -1,0 +1,9 @@
+Metric,Value
+Total samples,1120
+Total classes,32
+Training samples,784
+Validation samples,168
+Testing samples,168
+Minimum samples/class,35
+Maximum samples/class,35
+Average samples/class,35.00

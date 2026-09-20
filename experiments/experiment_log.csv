@@ -1,0 +1,2 @@
+Experiment ID,Model,Dataset version,Features,Epochs,Learning rate,Validation accuracy,Test accuracy,F1,Notes
+EXP-001,MLPClassifier,ISL-32-Classes-v1,Landmarks-63D-Normalized,100,0.001,0.6905,0.6607,0.6085,Week 4 Baseline ISL Classifier evaluation on 32 classes

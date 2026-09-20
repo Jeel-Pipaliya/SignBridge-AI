@@ -1,0 +1,42 @@
+# SignBridge AI - Week 4 Training Configuration
+
+# Model Architecture
+model:
+  type: "mlp"                  # Options: "mlp", "svm", "random_forest"
+  input_dim: 63                # 21 landmarks * 3 coordinates
+  hidden_units: [128, 64]      # Layer topology for MLP
+  activation: "relu"
+  dropout: 0.2                 # Represented via alpha L2 regularization (0.001)
+  alpha: 0.001
+
+# Training Hyperparameters
+training:
+  batch_size: 32
+  max_epochs: 100
+  learning_rate_init: 0.001
+  learning_rate: "adaptive"    # Options: "constant", "invscaling", "adaptive"
+  random_seed: 42
+  early_stopping: true
+  early_stopping_patience: 10
+  validation_fraction: 0.15
+  test_fraction: 0.15
+  shuffle: true
+
+# Real-Time & Inference Parameters
+inference:
+  confidence_threshold: 0.70
+  smoothing_window: 5
+  debounce_seconds: 0.8
+  consecutive_confirm_frames: 6
+
+# Storage Paths
+paths:
+  train_data: "data/processed/train.csv"
+  val_data: "data/processed/val.csv"
+  test_data: "data/processed/test.csv"
+  all_data: "data/processed/processed_landmarks.csv"
+  checkpoints_dir: "models/checkpoints"
+  best_model_dir: "models/best"
+  metadata_dir: "models/metadata"
+  reports_dir: "reports"
+  experiments_file: "experiments/experiment_log.csv"

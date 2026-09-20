@@ -20,7 +20,7 @@ SAVE_DIR = os.path.join("ai", "datasets", "collected")
 IMAGE_PREFIX = "image"
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+# ─── Helpers ────────────────────────────────────────────────────────
 
 def get_next_image_index(save_dir: str) -> int:
     """Return the next available image index in save_dir."""
