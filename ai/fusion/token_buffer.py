@@ -55,12 +55,15 @@ class TokenBuffer:
         Returns:
             The committed token string, or None if not committed.
         """
+        current_time = time.time()
+
         if token in ("...", "", "None", None):
             self._candidate_token = None
             self._candidate_count = 0
+            # If no hand / idle for >= 0.4s, allow the same sign to be committed immediately when re-shown
+            if (current_time - self._last_committed_time) >= 0.4:
+                self._last_committed_token = None
             return None
-
-        current_time = time.time()
 
         # Dynamic gestures are sequence-level events; they don't require multi-frame majority voting
         if source == "DYNAMIC":
@@ -98,12 +101,13 @@ class TokenBuffer:
             ):
                 can_add = False
 
+            self._candidate_count = 0  # Reset counter for next confirmation cycle
+
             if can_add:
                 entry = TokenEntry(token=token, confidence=self._candidate_conf, timestamp=current_time, source=source)
                 self.tokens.append(entry)
                 self._last_committed_token = token
                 self._last_committed_time = current_time
-                self._candidate_count = 0
                 self.is_finalized = False
                 return token
 

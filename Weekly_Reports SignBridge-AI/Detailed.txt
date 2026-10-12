@@ -1,0 +1,199 @@
+Final Feature Set
+Core AI
+
+✅ Real-Time Indian Sign Language Recognition
+
+✅ Continuous Sentence Recognition
+
+✅ AI Grammar Correction
+
+✅ Multi-Language Translation
+
+✅ Speech-to-Text
+
+✅ Text-to-Speech
+
+Smart AI Features
+
+✅ Personalized Learning
+
+✅ AI Sign Tutor
+
+✅ Real-Time Feedback
+
+✅ Confidence Score
+
+Accessibility
+
+✅ Emergency Mode
+
+✅ Offline Mode
+
+Analytics
+
+✅ Dashboard
+
+Accuracy
+FPS
+Daily Practice
+Confidence
+History
+Communication
+
+✅ Meeting Mode
+
+Live subtitles
+Multiple speakers
+Transcript download
+
+
+
+Folder Structure:
+signbridge-ai/
+│
+├── backend/
+│   ├── api/
+│   ├── auth/
+│   ├── models/
+│   ├── services/
+│   └── main.py
+│
+├── frontend/
+│   ├── src/
+│   ├── components/
+│   ├── pages/
+│   └── hooks/
+│
+├── ai/
+│   ├── datasets/
+│   ├── preprocessing/
+│   ├── training/
+│   ├── inference/
+│   ├── tutor/
+│   └── evaluation/
+│
+├── speech/
+├── translation/
+├── dashboard/
+├── meeting/
+├── emergency/
+├── deployment/
+├── docs/
+├── tests/
+└── README.md
+
+Plan:
+	8-Week Development Plan
+Week 1 – Foundations
+Learn
+Python
+Git & GitHub
+NumPy
+OpenCV
+MediaPipe
+Build
+Webcam capture
+Hand detection
+Pose detection
+Face detection
+Save landmarks to CSV
+
+Deliverable: Webcam with MediaPipe overlay and data collection pipeline.
+
+Week 2 – Dataset & Preprocessing
+Learn
+Sequence data
+Feature engineering
+Landmark normalization
+Data augmentation
+Build
+Download and inspect datasets (INCLUDE, WLASL, How2Sign)
+Convert videos → landmarks
+Prepare training/validation splits
+
+Deliverable: Clean training dataset.
+
+Week 3 – Sign Recognition
+Learn
+LSTM
+GRU
+Transformers (concepts)
+Model evaluation
+Build
+Train first sign recognition model
+Real-time prediction
+Confidence scores
+
+Deliverable: Recognizes isolated signs.
+
+Week 4 – Continuous Sentences
+Learn
+Sequence-to-sequence models
+CTC decoding (optional)
+Beam search (optional)
+Build
+Continuous sign recognition
+Sentence formation
+Grammar correction
+
+Deliverable: Continuous sign → natural sentence.
+
+Week 5 – Communication Features
+Build
+Speech-to-Text
+Text-to-Speech
+Multi-language translation
+Emergency mode
+
+Deliverable: Two-way communication assistant.
+
+Week 6 – AI Tutor & Personalized Learning
+Build
+Compare user landmarks to reference
+Accuracy scoring
+Movement feedback
+Personalized fine-tuning
+Practice history
+
+Deliverable: Interactive sign learning module.
+
+Week 7 – Dashboard & Meeting Mode
+Build
+Analytics dashboard
+Live captions
+Transcript storage
+Download transcript
+Confidence charts
+
+Deliverable: Productivity and accessibility features.
+
+Week 8 – Optimization & Deployment
+Build
+Offline inference (ONNX)
+Docker
+FastAPI + React integration
+Testing
+Documentation
+Demo video
+
+Deliverable: Deployable end-to-end application.
+
+
+Recommended Tech Stack
+Layer	Technology
+Programming	Python
+AI Framework	PyTorch
+Computer Vision	OpenCV
+Landmark Detection	MediaPipe
+Backend	FastAPI
+Frontend	React + TypeScript
+Database	PostgreSQL
+Cache	Redis (optional)
+Authentication	JWT
+Storage	MinIO or local
+Deployment	Docker
+Model Export	ONNX
+Speech Recognition	Whisper
+Translation	MarianMT / NLLB
+Grammar	T5 or LLM API
+Text-to-Speech	Coqui TTS

@@ -86,6 +86,44 @@ class TextToSpeechEngine:
         except Exception as err:
             logger.warning(f"Voice enumeration warning: {err}")
 
+    @staticmethod
+    def _sanitize_for_speech(text: str, has_native_hindi: bool) -> str:
+        """
+        Sanitize text for Windows SAPI5 to prevent charmap codec crashes.
+        If host OS lacks a native Hindi voice, transliterates to phonetic Romanized words.
+        """
+        if not text:
+            return ""
+
+        # Replace Hindi danda with period
+        clean = text.replace("\u0964", ".").replace("।", ".")
+
+        if not has_native_hindi:
+            phonetic_map = {
+                "नमस्ते!": "Namaste!",
+                "नमस्ते": "Namaste",
+                "धन्यवाद।": "Dhanyawad.",
+                "धन्यवाद": "Dhanyawad",
+                "कृपया।": "Kripya.",
+                "कृपया": "Kripya",
+                "हाँ।": "Haan.",
+                "हाँ": "Haan",
+                "नहीं।": "Nahin.",
+                "नहीं": "Nahin",
+                "१": "1", "२": "2", "३": "3", "४": "4", "५": "5",
+                "एक": "Ek", "दो": "Do", "तीन": "Teen", "चार": "Chaar", "पाँच": "Paanch",
+            }
+            for k, v in phonetic_map.items():
+                clean = clean.replace(k, v)
+
+            # Strip any remaining unencodable characters for Windows ANSI code page
+            try:
+                clean.encode("ascii")
+            except UnicodeEncodeError:
+                clean = clean.encode("ascii", "ignore").decode("ascii").strip()
+
+        return clean.strip()
+
     def _speech_worker(self) -> None:
         """Background thread consuming speech requests without blocking webcam inference."""
         while not self._stop_event.is_set():
@@ -101,13 +139,27 @@ class TextToSpeechEngine:
             self._is_speaking = True
             try:
                 if self._engine is not None:
+                    has_native_hindi = "hi" in self._voice_map
                     # Select voice if available
                     if lang in self._voice_map:
                         self._engine.setProperty("voice", self._voice_map[lang])
-                    self._engine.say(text)
-                    self._engine.runAndWait()
+                    elif "en" in self._voice_map:
+                        self._engine.setProperty("voice", self._voice_map["en"])
+
+                    safe_text = self._sanitize_for_speech(text, has_native_hindi)
+                    if safe_text:
+                        self._engine.say(safe_text)
+                        self._engine.runAndWait()
             except Exception as err:
                 logger.error(f"TTS speech execution error: {err}")
+                # Reset pyttsx3 engine if COM event loop encountered a fault
+                try:
+                    import pyttsx3
+                    self._engine = pyttsx3.init()
+                    self._engine.setProperty("rate", self.rate)
+                    self._engine.setProperty("volume", self.volume)
+                except Exception:
+                    pass
             finally:
                 self._is_speaking = False
                 self._speech_queue.task_done()
@@ -120,13 +172,14 @@ class TextToSpeechEngine:
     def is_speaking(self) -> bool:
         return self._is_speaking
 
-    def speak(self, text: str, language: Optional[str] = None) -> bool:
+    def speak(self, text: str, language: Optional[str] = None, clear_prev: bool = False) -> bool:
         """
         Enqueues text for asynchronous non-blocking speech playback.
 
         Args:
-            text: Sentence string to pronounce.
+            text: Sentence or token string to pronounce.
             language: 'en' or 'hi' (defaults to default_language).
+            clear_prev: If True, purges older pending speech so the latest sign speaks immediately.
 
         Returns:
             True if enqueued, False if TTS unavailable or text empty.
@@ -137,6 +190,17 @@ class TextToSpeechEngine:
         clean_text = text.strip()
         if not clean_text or clean_text == "...":
             return False
+
+        if clear_prev:
+            self.stop()
+
+        # Prevent queue pileup: retain at most 1 item so speech responds without delay
+        while self._speech_queue.qsize() > 1:
+            try:
+                self._speech_queue.get_nowait()
+                self._speech_queue.task_done()
+            except Exception:
+                break
 
         lang = language or self.default_language
         self._speech_queue.put((clean_text, lang))

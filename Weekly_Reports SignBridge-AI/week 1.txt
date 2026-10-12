@@ -1,0 +1,128 @@
+🧩 Day-by-Day Walkthrough
+DAY 1 — Project Setup & Environment
+🎯 Objective: Establish the directory structure, configuration constants, clean virtual environment, and open-source documentation.
+🧠 What You Learned: Structuring a production-grade machine learning project with centralized configuration (config.py) to prevent hardcoded numbers and avoid test-train path leaks.
+📁 Files Created/Modified:
+
+
+config.py
+
+
+requirements.txt
+
+
+.gitignore
+
+
+LICENSE
+
+
+README.md
+Directory scaffolding: data/{raw,processed,train,validation,test}, models/, outputs/{plots,confusion_matrix,predictions}, docs/.
+▶️ How to Run:
+bash
+.venv\Scripts\python.exe -c "import config; print('Project Root:', config.PROJECT_ROOT)"
+✅ Expected Output:
+text
+Project Root: d:\Project\signbridge-ai
+DAY 2 — Camera System
+🎯 Objective: Implement a modular camera capture wrapper using OpenCV with real-time FPS calculation, horizontal mirroring, and graceful failure handling.
+🧠 What You Learned: Rolling exponential average for smooth FPS calculation and Python's Context Manager protocol (__enter__ / __exit__) to guarantee camera hardware resource deallocation.
+📁 File Created: 
+
+realtime/camera.py
+🔄 Flow:
+text
+Webcam Hardware → cv2.VideoCapture → cv2.flip (Mirror) → Rolling FPS Calculation → Display Frame
+▶️ How to Run:
+bash
+.venv\Scripts\python.exe realtime/camera.py
+✅ Expected Output: A live webcam window opens with an FPS counter in the top-left. Press q or ESC to quit.
+DAY 3 — Hand Detection
+🎯 Objective: Integrate MediaPipe Hands to detect 1 or 2 hands, extract 21 3D coordinate points $(x, y, z)$, detect handedness (Left/Right), and render landmark connections.
+🧠 What You Learned: Converting BGR frames to RGB for MediaPipe inference, managing performance flags (writeable = False), and parsing multi_hand_landmarks and multi_handedness.
+📁 File Created: 
+
+ai/hand_detection.py
+🔄 Flow:
+text
+Camera Frame (BGR) → cv2.cvtColor(RGB) → MediaPipe Hands → 21 Landmarks + Handedness → Overlay Drawing
+▶️ How to Run:
+bash
+.venv\Scripts\python.exe ai/hand_detection.py
+✅ Expected Output: Live camera feed tracking hands with red/green skeleton connections, displaying detection confidence and total hands detected.
+DAY 4 — Landmark Understanding & Inspector
+🎯 Objective: Understand all 21 hand joints anatomically and build an inspection tool with color-coded finger groups and numeric labels (0 to 20).
+🧠 What You Learned:
+0: Wrist (Origin reference)
+1–4: Thumb (CMC, MCP, IP, TIP)
+5–8: Index finger (MCP, PIP, DIP, TIP)
+9–12: Middle finger (MCP, PIP, DIP, TIP)
+13–16: Ring finger (MCP, PIP, DIP, TIP)
+17–20: Pinky finger (MCP, PIP, DIP, TIP)
+📁 File Created: 
+
+ai/visualize_landmarks.py
+▶️ How to Run:
+bash
+.venv\Scripts\python.exe ai/visualize_landmarks.py
+✅ Expected Output: An on-screen color legend and numeric labels next to each joint on your hand in real time.
+DAY 5 — Feature Extraction (63-Dimensional Invariant Vector)
+🎯 Objective: Convert 21 landmarks into a 63-dimensional feature vector $[x_0, y_0, z_0, \dots, x_{20}, y_{20}, z_{20}]$ that is mathematically invariant to hand position and distance from camera.
+🧠 What You Learned:
+Translation Invariance: Centering coordinates by subtracting the wrist joint $(x_0, y_0, z_0)$ so that the wrist is placed at $(0, 0, 0)$.
+Scale Invariance: Dividing all centered coordinates by a reference distance (the Euclidean distance between the wrist and the middle finger MCP joint lm9). This removes sensitivity to how close or far the user's hand is from the lens.
+📁 File Created: 
+
+ai/feature_extraction.py
+▶️ How to Run:
+bash
+.venv\Scripts\python.exe ai/feature_extraction.py
+✅ Expected Output:
+text
+Testing Feature Extraction Mathematical Invariance...
+  [1] Translation Invariance: PASSED (Max Diff: 3.58e-07)
+  [2] Scale Invariance:       PASSED (Max Diff: 1.19e-07)
+  [3] Combined Invariance:    PASSED (Max Diff: 6.22e-07)
+Feature Extraction Engine verified successfully!
+Total features: 63 -> [lm0_x, lm0_y, ..., lm20_z]
+DAY 6 — Guided Data Collection Prototype
+🎯 Objective: Build an interactive data collector to capture live sign gestures directly into a clean CSV file (data/raw/collected_landmarks.csv).
+🧠 What You Learned: Designing an interactive HUD with sample counters, burst capture mode, and automated CSV header validation (lm0_x, ..., lm20_z, label).
+📁 File Created: 
+
+data/collect_samples.py
+Controls:
+[SPACE] or [S]: Capture a single landmark sample.
+[B]: Toggle burst capture mode (captures frames automatically with 0.15s delay while holding sign).
+[N]: Switch to a new sign label (e.g. HELLO, YES, NO, 1, 2).
+[Q] or [ESC]: Exit and save session.
+▶️ How to Run:
+bash
+.venv\Scripts\python.exe data/collect_samples.py --label HELLO --samples 30
+DAY 7 — Week 1 Integration Testing & Milestone Report
+🎯 Objective: Execute an automated test suite verifying all 7 days of Week 1, and document the architectural achievements and problem solutions.
+📁 Files Created:
+Automated Test Suite: 
+
+tests/test_week1.py
+Milestone Report: 
+
+docs/week1_report.md
+▶️ How to Run:
+bash
+.venv\Scripts\python.exe tests/test_week1.py
+✅ Test Suite Output:
+text
+test_config_constants (__main__.TestWeek1EnvironmentAndStructure.test_config_constants) ... ok
+test_required_directories_exist (__main__.TestWeek1EnvironmentAndStructure.test_required_directories_exist) ... ok
+test_detector_blank_frame (__main__.TestHandDetection.test_detector_blank_frame) ... ok
+test_detector_initialization (__main__.TestHandDetection.test_detector_initialization) ... ok
+test_feature_names_count (__main__.TestFeatureExtraction.test_feature_names_count) ... ok
+test_feature_vector_dimension (__main__.TestFeatureExtraction.test_feature_vector_dimension) ... ok
+test_invariance_verification (__main__.TestFeatureExtraction.test_invariance_verification) ... ok
+test_wrist_at_origin_after_normalization (__main__.TestFeatureExtraction.test_wrist_at_origin_after_normalization) ... ok
+test_csv_creation_and_append (__main__.TestDataCollectionCSV.test_csv_creation_and_append) ... ok
+----------------------------------------------------------------------
+Ran 9 tests in 0.110s
+OK

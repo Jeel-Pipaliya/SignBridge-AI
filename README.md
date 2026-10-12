@@ -1,14 +1,14 @@
 # 🚀 SIGNBRIDGE AI
 
-### Intelligent Real-Time AI Communication Platform for Deaf & Hard-of-Hearing People
+### Intelligent Real-Time AI Communication & Learning Platform for Indian Sign Language (ISL)
 
-SignBridge AI is an AI-powered assistive communication platform that translates **Indian Sign Language (ISL)** into understandable text and speech in real time. Designed as a final-year B.Tech AIML capstone project, it bridges the communication barrier between the deaf & hard-of-hearing community and society through robust computer vision and machine learning.
+SignBridge AI is an end-to-end assistive communication platform that translates **Indian Sign Language (ISL)** into understandable text and speech in real time. Designed as a production-minded B.Tech AIML capstone project, it bridges the barrier between the deaf & hard-of-hearing community and society through robust computer vision, neural sequence modeling, deterministic grammar reconstruction, and accessible full-stack engineering.
 
 ---
 
 ## 📌 Problem Statement
 
-Over 63 million people in India experience significant auditory impairment. Indian Sign Language (ISL) is their primary medium of expression, yet the vast majority of the general public lacks sign language literacy. This creates persistent friction in educational institutions, healthcare facilities, workplaces, and daily public interactions.
+Over 63 million individuals in India experience significant auditory impairment. Indian Sign Language (ISL) is their primary medium of expression, yet the vast majority of the general public lacks sign language literacy. This creates persistent friction in educational institutions, healthcare facilities, workplaces, and daily public interactions.
 
 SignBridge AI addresses this divide by providing an open-source, affordable, real-time vision-based ISL recognition engine that functions on standard consumer webcams without requiring specialized sensory gloves.
 
@@ -17,48 +17,41 @@ SignBridge AI addresses this divide by providing an open-source, affordable, rea
 ## 🧠 System Architecture
 
 ```text
-Webcam Frame (640x480 @ 30 FPS)
-       │
-       ▼
-OpenCV Capture Engine (`realtime/camera.py`)
-       │
-       ▼
-MediaPipe Hands Detector (`ai/hand_detection.py`)
-       │
-       ▼
-21 3D Hand Landmarks (x, y, z)
-       │
-       ▼
-Feature Extraction & Invariant Normalizer (`ai/feature_extraction.py`)
-   ├── Translation Invariance: Centered relative to wrist (lm0 -> 0, 0, 0)
-   └── Scale Invariance: Normalized by wrist-to-middle MCP distance
-       │
-       ▼
-Invariant 63-Dimensional Feature Vector
-       │
-       ▼
-Trained ML Classifier (`models/isl_classifier.pkl` - SVM RBF)
-       │
-       ▼
-Confidence Threshold Gate (Score >= 0.70)
-       │
-       ▼
-Temporal Smoothing Engine (`realtime/recognizer.py` - 5-Frame Majority Vote)
-       │
-       ▼
-Text Accumulation Engine & Interactive HUD (`realtime/realtime_demo.py`)
+                                CLIENT LAYER (React 18 + Vite + Tailwind CSS)
+   ┌────────────────────────────────────────────────────────────────────────────────────────┐
+   │ • Live Recognition Studio (/recognize)      • 32-Sign Educational Tutor (/tutor)       │
+   │ • Two-Way Speech & Chat (/communication)     • Meeting & Lecture Captions (/captions)   │
+   │ • High-Contrast Emergency Mode (/emergency) • Analytics & Telemetry (/analytics)       │
+   └────────────────────────────────────────────────────────────────────────────────────────┘
+                                               │
+                                 JSON / REST API / HTTPS
+                                               ▼
+                              BACKEND LAYER (FastAPI + Python 3.12)
+   ┌────────────────────────────────────────────────────────────────────────────────────────┐
+   │ • JWT Authentication & Bcrypt Hashing       • CORS & Input Schema Validation (Pydantic)│
+   │ • Invariant Normalizer (Wrist + MCP)        • ISL Grammar Reconstruction & Translation │
+   │ • Telemetry & Practice Analytics            • Async Non-Blocking TTS Worker (pyttsx3)  │
+   └────────────────────────────────────────────────────────────────────────────────────────┘
+                       │                                             │
+                       ▼                                             ▼
+             PERSISTENCE LAYER                             AI & INFERENCE ENGINES
+   ┌───────────────────────────────────┐         ┌──────────────────────────────────────────┐
+   │ • PostgreSQL 16 (Production)      │         │ • Static 32-Class MLP Classifier (66.07%)│
+   │ • SQLite fallback (Local Dev)     │         │ • Dynamic 3-Class Bi-LSTM Sequence (100%)│
+   │ • Alembic Database Migrations     │         │ • MediaPipe Hands (21 3D Joint Nodes)    │
+   └───────────────────────────────────┘         └──────────────────────────────────────────┘
 ```
 
 ---
 
 ## 🛠️ Technology Stack
 
-* **Programming Language:** Python 3.10+
-* **Computer Vision:** OpenCV (`opencv-python`), MediaPipe Hands
-* **Data Processing:** NumPy, Pandas
-* **Machine Learning:** Scikit-Learn (SVM, Random Forest, MLP), Joblib
-* **Data Visualization:** Matplotlib, Seaborn
-* **Testing:** Unittest (25 automated integration tests)
+* **Frontend:** React 18, TypeScript, Vite, Tailwind CSS (WCAG 2.1 AA Compliant), Lucide React, TanStack Query, React Router v6.
+* **Backend:** Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2.0, Alembic, Bcrypt, PyJWT, Uvicorn.
+* **Computer Vision & AI:** MediaPipe Hands, OpenCV, PyTorch, Scikit-Learn, NumPy, Pandas.
+* **Speech & Language:** Web Speech API, Offline pyttsx3 SAPI5 with phonetic transliteration fallback, deterministic ISL Grammar Engine.
+* **Database & DevOps:** PostgreSQL 16, SQLite (dev), Docker, Docker Compose, GitHub Actions CI.
+* **Testing:** Unittest & Pytest (96 automated integration and invariant unit tests passing).
 
 ---
 
@@ -66,274 +59,169 @@ Text Accumulation Engine & Interactive HUD (`realtime/realtime_demo.py`)
 
 ```text
 SignBridge-AI/
-│
 ├── README.md                           # Master project documentation
 ├── requirements.txt                    # Core Python dependencies
-├── .gitignore                          # Git exclusions (caches, models, raw data)
-├── LICENSE                             # MIT Open-Source License
-├── config.py                           # Central configuration (paths, thresholds, camera)
+├── config.py                           # Central configuration
+├── docker-compose.yml                  # Production Docker Compose stack
+├── alembic.ini                         # Alembic migration configuration
+├── .gitignore                          # Git exclusions
 │
-├── data/
-│   ├── raw/                            # Original images and collected raw CSVs
-│   │   ├── collected_landmarks.csv     # Live data collection output
-│   │   └── README.md
-│   ├── processed/                      # Preprocessed feature datasets (63D)
-│   │   ├── processed_landmarks.csv     # Compiled feature dataset (600 samples)
-│   │   ├── train.csv                   # 70% Stratified training set
-│   │   ├── val.csv                     # 15% Stratified validation set
-│   │   └── test.csv                    # 15% Stratified unseen test set
-│   └── class_mapping.json              # Deterministic class-to-index mapping
+├── frontend/                           # React 18 + TypeScript + Vite + Tailwind Client
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tailwind.config.js
+│   ├── src/
+│   │   ├── api/                        # Typed API client & interfaces
+│   │   ├── context/                    # AuthContext & AccessibilityContext
+│   │   ├── components/                 # Navbar, Footer, ProtectedRoute, StatCard
+│   │   ├── hooks/                      # useWebcam hook with permission management
+│   │   ├── pages/                      # 11 Full Accessible Pages
+│   │   ├── App.tsx                     # Routing & providers
+│   │   └── main.tsx
+│   └── Dockerfile                      # Production Nginx multi-stage Dockerfile
 │
-├── notebooks/
-│   ├── 01_dataset_exploration.ipynb    # Class distributions & sample visualization
-│   └── 03_model_training.ipynb         # Model benchmarking (RF vs SVM vs MLP)
+├── backend/                            # FastAPI REST Backend Service
+│   ├── Dockerfile
+│   ├── .env.example
+│   ├── migrations/                     # Alembic migration scripts
+│   └── app/
+│       ├── main.py                     # Master FastAPI application entrypoint
+│       ├── core/                       # Settings & JWT security
+│       ├── db/                         # SQLAlchemy session, base & seed script
+│       ├── models/                     # Relational database models
+│       ├── schemas/                    # Pydantic request/response schemas
+│       ├── services/                   # ML inference, grammar, and TTS services
+│       └── api/v1/                     # REST API route endpoints
 │
-├── ai/
-│   ├── __init__.py
-│   ├── hand_detection.py               # MediaPipe Hands reusable wrapper
+├── ai/                                 # Computer Vision & Machine Learning Pipelines
 │   ├── feature_extraction.py           # 63D invariant feature normalizer
-│   ├── visualize_landmarks.py          # 21-joint anatomical inspector
-│   ├── preprocessing.py                # Batch image-to-feature preprocessor
-│   ├── dataset_loader.py               # Stratified 70/15/15 train/val/test loader
-│   ├── train.py                        # Model training and architecture comparison
-│   ├── evaluate.py                     # Metrics, classification report & confusion matrix
-│   ├── predict.py                      # Standalone real-time inference engine
-│   └── model/
-│       └── README.md
+│   ├── hand_detection.py               # MediaPipe Hands reusable wrapper
+│   ├── predict.py                      # Sub-millisecond inference engine
+│   ├── train.py                        # Model training and benchmarking
+│   └── dynamic/                        # Bi-LSTM sequence model for temporal gestures
 │
-├── realtime/
-│   ├── __init__.py
-│   ├── camera.py                       # Modular OpenCV video capture with FPS tracking
-│   ├── recognizer.py                   # Temporal smoothing & text accumulation
-│   └── realtime_demo.py                # Main live webcam executable
+├── models/                             # Trained Checkpoints & Serialized Encoders
+│   ├── best/isl_classifier.pkl         # Champion 32-class MLP model
+│   ├── dynamic/bilstm_dynamic.pt       # 3-class dynamic gesture Bi-LSTM
+│   ├── label_encoder.pkl               # Serialized LabelEncoder
+│   └── metadata/                       # Evaluated metrics JSONs
 │
-├── models/
-│   ├── .gitkeep
-│   ├── isl_classifier.pkl              # Trained SVM (RBF) classifier checkpoint
-│   └── label_encoder.pkl               # Serialized LabelEncoder
+├── tests/                              # Automated Test Suite (96 Tests)
+│   ├── test_backend_api.py             # FastAPI REST endpoints & auth tests
+│   ├── test_week1.py                   # Camera, landmark, and invariance tests
+│   ├── test_week2.py                   # Dataset and feature extraction tests
+│   ├── test_week3.py                   # Model training and prediction tests
+│   ├── test_dynamic_model.py           # Bi-LSTM dynamic sequence tests
+│   ├── test_grammar.py                 # ISL grammar reconstruction tests
+│   └── test_tts.py                     # Text-to-speech non-blocking tests
 │
-├── outputs/
-│   ├── plots/
-│   │   ├── class_distribution.png      # Class sample count bar chart
-│   │   ├── sample_grid.png             # 12-class representative sample grid
-│   │   └── per_class_f1.png            # Per-class F1-score performance
-│   ├── confusion_matrix/
-│   │   └── confusion_matrix.png        # High-resolution confusion matrix heatmap
-│   └── predictions/
-│
-├── docs/
-│   ├── isl_dataset_research.md         # Research report on 5 verified ISL datasets
-│   ├── prototype_vocabulary.md         # 12-class prototype vocabulary specification
-│   ├── week1_report.md                 # Week 1 milestone report
-│   ├── week2_report.md                 # Week 2 milestone report
-│   └── week3_report.md                 # Week 3 milestone report
-│
-├── tests/
-│   ├── test_week1.py                   # Week 1 integration tests (9 tests)
-│   ├── test_week2.py                   # Week 2 integration tests (8 tests)
-│   └── test_week3.py                   # Week 3 integration tests (8 tests)
-│
-├── frontend/                           # Reserved for future Web UI
-├── backend/                            # Reserved for future API backend
-├── speech/                             # Reserved for future TTS/STT
-├── translation/                        # Reserved for ISL Grammar translation
-└── dashboard/                          # Reserved for analytics dashboard
+└── docs/                               # Comprehensive Technical Documentation
+    ├── ARCHITECTURE.md                 # Complete system design
+    ├── API.md                          # REST API specification & schemas
+    ├── DATABASE.md                     # Database ER diagram & table definitions
+    ├── ML_PIPELINE.md                  # Invariant mathematics & inference pipeline
+    ├── DATASET_GUIDE.md                # Dataset acquisition & collection guide
+    ├── MODEL_EVALUATION.md             # Ground-truth test metrics & confusion analysis
+    ├── SECURITY_AND_PRIVACY.md         # Cryptography & GDPR privacy erasure
+    ├── DEPLOYMENT.md                   # Local startup & production deployment
+    ├── TROUBLESHOOTING.md              # Troubleshooting guide & common fixes
+    └── PROJECT_REPORT.md               # Final engineering capstone report
 ```
 
 ---
 
 ## ⚡ Quick Start & Installation
 
-### 1. Clone & Set Up Virtual Environment
+### 1. Set Up Python Backend
 
 ```bash
 # Clone the repository
 git clone https://github.com/Jeel-Pipaliya/SignBridge-AI.git
 cd SignBridge-AI
 
-# Create virtual environment
-python -m venv .venv
-
 # Activate virtual environment
 # Windows:
 .venv\Scripts\activate
 # Linux / macOS:
 source .venv/bin/activate
-```
 
-### 2. Install Dependencies
-
-```bash
+# Install dependencies
 pip install -r requirements.txt
-```
+pip install fastapi uvicorn pydantic pydantic-settings sqlalchemy alembic bcrypt pyjwt python-multipart httpx pytest email-validator
 
-### 3. Run the Automated Test Suite (25 Tests)
+# Run database migrations and seed default data
+alembic upgrade head
+python -m backend.app.db.seed
+
+# Start backend server
+uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+* Backend API: `http://127.0.0.1:8000`
+* Swagger Docs: `http://127.0.0.1:8000/docs`
+
+### 2. Set Up React Frontend
 
 ```bash
-python -m unittest tests/test_week1.py tests/test_week2.py tests/test_week3.py
+cd frontend
+
+# Install packages
+npm install
+
+# Start Vite dev server
+npm run dev
+```
+* Frontend Web App: `http://localhost:5173`
+
+### 3. Pre-Seeded Demo Account
+* **Email:** `demo@signbridge.ai`
+* **Password:** `SignBridge@2026`
+*(A "Quick-Fill Demo Account" button is also provided on the sign-in page).*
+
+---
+
+## 🧪 Automated Testing Suite (96 Tests)
+
+Run the entire test suite covering machine learning mathematical invariance, sequence models, text-to-speech queues, grammar engines, and backend API security:
+
+```bash
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+**Results:**
+```text
+Ran 96 tests in 2.859s
+OK
+Feature Extraction Mathematical Invariance:
+  [1] Translation Invariance: PASSED (Max Diff: 3.58e-07)
+  [2] Scale Invariance:       PASSED (Max Diff: 1.19e-07)
+  [3] Combined Invariance:    PASSED (Max Diff: 6.22e-07)
 ```
 
 ---
 
-## 🎮 How to Run Live Applications
+## 🐳 Docker Compose Production Deployment
 
-| Module / Milestone | Command | Purpose & Controls |
-|---|---|---|
-| **Live Recognition Demo (Week 3)** | `python realtime/realtime_demo.py` | **Full End-to-End Live Sign Recognition**<br>`[SPACE]`: Space, `[BACKSPACE]`: Delete, `[C]`: Clear, `[Q]`: Quit |
-| **Data Collection Tool (Week 1)** | `python data/collect_samples.py` | Collects live sign samples into CSV (`data/raw/`)<br>`[SPACE]`: Capture, `[B]`: Burst mode, `[N]`: New label |
-| **Landmark Inspector (Week 1)** | `python ai/visualize_landmarks.py` | Anatomical 21-joint inspection with index labels (0–20) |
-| **Camera Test (Week 1)** | `python realtime/camera.py` | Tests camera stream & FPS display (`[Q]` to exit) |
-| **Model Training (Week 3)** | `python ai/train.py` | Trains & benchmarks RF, SVM, MLP; exports champion model |
-| **Evaluation & Metrics (Week 3)** | `python ai/evaluate.py` | Generates Confusion Matrix and F1 performance plots |
+Launch the full production stack (PostgreSQL, FastAPI Backend, and Nginx-served React Frontend):
+
+```bash
+docker-compose up -d --build
+```
+* Web Application: `http://localhost`
+* Backend API: `http://localhost:8000/docs`
 
 ---
 
-## 📊 Evaluation Results (Measured on Unseen Test Set)
+## 📊 Measured Evaluation Results (Held-Out Test Set)
 
-* **Dataset Size:** 600 samples across 12 prototype classes
-* **Champion Model:** Support Vector Machine with RBF Kernel ($C=10.0$)
-* **Overall Test Accuracy:** **73.33%**
-* **Macro Precision:** **0.7142**
-* **Macro Recall:** **0.7440**
-* **Macro F1-Score:** **0.7134**
-
-### Perfect Separation Classes ($F1 = 1.00$):
-* `1` (Single index finger extended)
-* `3` (Three central fingers extended)
-* `A` (Fist with thumb resting alongside index)
-* `C` (Curved fingers and palm forming an arc)
-* `L` (Perpendicular index finger and thumb)
-* `Y` (Extended thumb and pinky)
+* **Static Classifier:** Multi-Layer Perceptron Neural Network (32 classes: `1`–`5`, `A`–`Z`, `HELLO`)
+* **Held-Out Test Set Accuracy:** **66.07%**
+* **Validation Accuracy:** **69.05%**
+* **Test Macro F1-Score:** **0.6085**
+* **Dynamic Classifier:** Bi-LSTM (`HELLO`, `J`, `Z`) Test Accuracy: **100.0%**
+* **Inference Latency:** **< 15 ms** on standard consumer CPU
 
 ---
 
-## ⚠️ Limitations & Real-World Challenges
+## 📜 License & Acknowledgements
 
-1. **Topological Ambiguities:**
-   * Sign `2` vs. `V`: Both signs share two extended digits; small perspective variations can cause boundary crossings.
-   * Sign `5` vs. `HELLO`: Both feature an open 5-digit palm configuration.
-2. **Optical Occlusion:**
-   * When fingers overlap from the perspective of a single 2D camera, MediaPipe's estimated depth ($z$) coordinate is noisier than $(x, y)$.
-3. **Lighting & Motion Blur:**
-   * Rapid gestures cause temporal landmark jitter, which is actively stabilized using our sliding-window majority vote.
-
----
-
-## 🎯 Week 4 Milestone: 32-Class ISL Recognition & Real-Time Pipeline
-
-Week 4 scales the prototype from 12 to **32 full Indian Sign Language classes** (`1`–`5`, `A`–`Z`, `HELLO`), incorporating an end-to-end modular pipeline, automated dataset validation, YAML configuration, Multi-Layer Perceptron neural network architecture, and a low-latency real-time inference loop.
-
-### Quick Start Commands
-
-#### 1. Installation
-```bash
-pip install -r requirements.txt
-```
-
-#### 2. Dataset Verification & Quality Audit
-```bash
-# Compute comprehensive dataset statistics and class distribution
-python -m ai.data_analysis.dataset_statistics
-
-# Run automated data health and corruption check
-python -m ai.data_analysis.validate_dataset
-```
-
-#### 3. Model Training
-```bash
-# Train candidate classifiers (MLP Neural Net, SVM, Random Forest) with YAML configuration
-python -m ai.training.train
-```
-
-#### 4. Model Evaluation & Diagnostics
-```bash
-# Run test set evaluation, generate confusion matrix & classification report
-python -m ai.evaluation.evaluate
-```
-
-#### 5. Real-Time Webcam Recognition
-```bash
-# Launch live webcam recognition with temporal stabilization & HUD
-python -m ai.inference.realtime
-
-# Run headless latency & FPS benchmark
-python -m ai.inference.realtime --benchmark
-```
-
-#### 6. Automated Testing
-```bash
-# Run all 48 automated unit and integration tests
-python main.py --mode test
-```
-
-### Empirical Week 4 Results
-
-* **Vocabulary:** 32 ISL Classes (`1`–`5`, `A`–`Z`, `HELLO`)
-* **Dataset:** 1,120 balanced landmark samples (784 train / 168 val / 168 test)
-* **Champion Model:** Multi-Layer Perceptron (`MLP_NeuralNet` — Dense(128, ReLU) -> Dense(64, ReLU) -> Softmax(32))
-* **Test Accuracy:** **66.07%** across 32 classes
-* **Real-Time Latency:** **13.2 ms** per frame
-* **Throughput:** **75+ FPS** on standard CPU
-* **Confidence Gate:** 0.70 threshold with 5-frame sliding-window temporal smoothing
-
----
-
-## 🚀 Week 5 Milestone: Dynamic Gestures, ISL Grammar & Speech Synthesis
-
-Week 5 expands SignBridge AI from static landmark recognition into an end-to-end **multimodal communication platform**:
-* **Dynamic Gesture Model:** Bidirectional LSTM (`BiLSTMClassifier`) modeling temporal sequences ($T=30$ frames) for trajectory-dependent signs (`HELLO` wave, `J` hook, `Z` zigzag).
-* **Static + Dynamic Decision Fusion:** Arbitration layer combining static frame predictions with temporal sequence recognition, gated by inter-frame motion energy and cooldown debouncing.
-* **ISL Grammar Reconstruction:** Rule-based natural language reconstruction transforming raw ISL tokens (SOV, Topic-Comment, Question-Word-Final) into natural English sentences.
-* **Multilingual Translation:** Direct sentence-level and lexical mapping from English to Hindi.
-* **Offline Text-to-Speech (TTS):** Non-blocking speech synthesis (`pyttsx3`) supporting English and Hindi speech without degrading webcam frame rates.
-* **Live Multimodal HUD:** Real-time feedback displaying sign, modality (`STATIC` / `DYNAMIC`), confidence, FPS, latency, token buffer, and natural sentence reconstruction.
-
-### Week 5 Quick Start Commands
-
-#### 1. Dynamic Gesture Sequence Data Collection
-```bash
-python -m ai.data_collection.collect_dynamic --class HELLO --target 50
-python -m ai.data_collection.collect_dynamic --class J --target 50
-python -m ai.data_collection.collect_dynamic --class Z --target 50
-```
-
-#### 2. Dynamic Model Training & Evaluation
-```bash
-# Train Bi-LSTM sequence classifier & Random Forest baseline
-python -m ai.dynamic.train --epochs 30
-
-# Evaluate trained dynamic model on unseen test set
-python -m ai.dynamic.evaluate
-```
-
-#### 3. Real-Time Multimodal Recognition & Speech
-```bash
-# Launch live webcam recognition with full multimodal fusion and TTS
-python -m ai.inference.realtime
-
-# Launch with Hindi speech and automatic voice readout
-python -m ai.inference.realtime --lang hi --auto-speak
-
-# Run headless performance and latency benchmark
-python -m ai.inference.realtime --benchmark
-```
-
-#### 4. Automated Testing (88 Tests)
-```bash
-# Run all 88 unit and integration tests
-python main.py --mode test
-```
-
-### Empirical Week 5 Benchmark Results
-
-* **Static Inference Latency:** **0.07 ms**
-* **Dynamic Bi-LSTM Latency:** **2.66 ms**
-* **Total Pipeline Latency:** **15.08 ms** (Target: $\le 100$ ms)
-* **Effective Throughput:** **66.3 FPS** (Target: $\ge 15$ FPS)
-* **Automated Test Suite:** **88 / 88 Passing (100% Success Rate)**
-
----
-
-## 📄 License
-
-This project is licensed under the [MIT License](file:///d:/Project/signbridge-ai/LICENSE).
+Open-source under the **MIT License**. Built with dedication to support the Indian Deaf & Hard-of-Hearing Community.

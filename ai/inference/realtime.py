@@ -122,6 +122,32 @@ class ISLRealtimeEngine:
         self.last_grammar_result: Optional[GrammarResult] = None
         self.last_translated_text: str = ""
 
+    def get_token_pronunciation(self, token: str) -> str:
+        """Returns natural phonetic pronunciation for a single token in the active language."""
+        t = str(token).strip().upper()
+        if self.current_language == "hi":
+            # Hindi pronunciation (phonetic Romanized so SAPI5 / Windows speech engine works reliably)
+            num_map_hi = {
+                "1": "Ek",
+                "2": "Do",
+                "3": "Teen",
+                "4": "Chaar",
+                "5": "Paanch",
+                "HELLO": "Namaste",
+            }
+            return num_map_hi.get(t, t)
+        else:
+            # English pronunciation
+            num_map_en = {
+                "1": "One",
+                "2": "Two",
+                "3": "Three",
+                "4": "Four",
+                "5": "Five",
+                "HELLO": "Hello",
+            }
+            return num_map_en.get(t, t)
+
     def process_frame(
         self,
         frame: np.ndarray,
@@ -164,9 +190,13 @@ class ISLRealtimeEngine:
                 else:
                     self.last_translated_text = self.last_grammar_result.corrected_text
 
-                # Auto-speak if enabled
+                # Auto-speak: Speak the detected number, alphabet, or word every time it occurs!
                 if self.auto_speak:
-                    self.tts_engine.speak(self.last_translated_text, language=self.current_language)
+                    token_speech = self.get_token_pronunciation(committed)
+                    self.tts_engine.speak(token_speech, language=self.current_language, clear_prev=True)
+        else:
+            # Inform token buffer when no hand or transitioning so next sign can be captured cleanly
+            self.token_buffer.update(None)
 
         t_end = time.perf_counter()
         latency_ms = (t_end - t_start) * 1000.0
@@ -189,7 +219,7 @@ class ISLRealtimeEngine:
             self.last_translated_text = english_text
 
         print(f"\n[FINALIZED SENTENCE] {speak_text}")
-        self.tts_engine.speak(speak_text, language=self.current_language)
+        self.tts_engine.speak(speak_text, language=self.current_language, clear_prev=True)
 
     def draw_hud(
         self,
@@ -206,100 +236,104 @@ class ISLRealtimeEngine:
 
         # Top Header Bar (Translucent Dark Charcoal)
         header_bar = frame.copy()
-        cv2.rectangle(header_bar, (0, 0), (w, 105), (18, 22, 28), -1)
+        cv2.rectangle(header_bar, (0, 0), (w, 100), (16, 20, 26), -1)
         cv2.addWeighted(header_bar, 0.85, frame, 0.15, 0, frame)
+        cv2.line(frame, (0, 100), (w, 100), (45, 55, 75), 1)
 
-        # Title
+        # Line 1 (y=24): Title on Left, FPS & Latency on Right
         cv2.putText(
             frame,
-            "SIGNBRIDGE AI — Real-Time Multimodal ISL Platform (Week 5)",
-            (15, 28),
+            "SIGNBRIDGE AI | Multimodal ISL",
+            (14, 24),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.65,
-            (0, 220, 255),
+            0.55,
+            (0, 225, 255),
             2,
             cv2.LINE_AA,
         )
-
-        # Diagnostics: FPS, Latency & Language
-        lang_str = f"Lang: {self.current_language.upper()}"
-        diag_text = f"FPS: {fps:.1f} | Latency: {latency_ms:.1f} ms | {lang_str}"
+        diag_text = f"FPS: {fps:.1f} | {latency_ms:.1f}ms"
         cv2.putText(
             frame,
             diag_text,
-            (w - 380, 28),
+            (w - 180, 24),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.50,
+            0.48,
             (0, 255, 120),
-            2,
+            1,
             cv2.LINE_AA,
         )
 
-        # Hand Detection & TTS Status
+        # Line 2 (y=50): Detection Badge, TTS Status & Active Language
         if hand_detected:
             status_color = (0, 255, 0)
             status_str = "[HAND READY]"
         else:
-            status_color = (120, 120, 120)
+            status_color = (130, 130, 130)
             status_str = "[NO HAND DETECTED]"
 
-        tts_str = "[TTS ON]" if self.auto_speak else "[TTS MANUAL]"
-        cv2.putText(frame, f"{status_str}  {tts_str}", (15, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.50, status_color, 1, cv2.LINE_AA)
+        tts_str = "[AUTO-SPEAK ON]" if self.auto_speak else "[TTS MANUAL]"
+        tts_color = (0, 255, 200) if self.auto_speak else (140, 140, 140)
+        cv2.putText(frame, status_str, (14, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.44, status_color, 1, cv2.LINE_AA)
+        cv2.putText(frame, tts_str, (185, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.44, tts_color, 1, cv2.LINE_AA)
 
-        # Sign Display & Modality
+        lang_str = f"LANG: {self.current_language.upper()}"
+        cv2.putText(frame, lang_str, (w - 110, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 215, 255), 1, cv2.LINE_AA)
+
+        # Line 3 (y=84): Active Recognized Sign & Confidence
         if hand_detected and result.label != "...":
             display_sign = result.label
             modality_str = f"[{result.type}]"
-            sign_color = (0, 255, 0) if result.type == "DYNAMIC" else (0, 230, 255)
+            sign_color = (0, 255, 0) if result.type == "DYNAMIC" else (0, 235, 255)
             conf_str = f"Conf: {result.confidence:.0%}"
         elif hand_detected:
             display_sign = "IDENTIFYING..."
             modality_str = "[SCANNING]"
             sign_color = (0, 200, 255)
-            conf_str = f"Threshold: {self.confidence_threshold:.0%}"
+            conf_str = f"Gate: {self.confidence_threshold:.0%}"
         else:
             display_sign = "WAITING FOR SIGN..."
             modality_str = "[IDLE]"
-            sign_color = (150, 150, 150)
-            conf_str = "No Signal"
+            sign_color = (140, 140, 140)
+            conf_str = "No Hand"
 
-        cv2.putText(frame, f"Sign: {display_sign} {modality_str}", (15, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.70, sign_color, 2, cv2.LINE_AA)
-        cv2.putText(frame, conf_str, (w - 220, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, f"Sign: {display_sign} {modality_str}", (14, 84), cv2.FONT_HERSHEY_SIMPLEX, 0.65, sign_color, 2, cv2.LINE_AA)
+        cv2.putText(frame, conf_str, (w - 140, 84), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (230, 230, 230), 1, cv2.LINE_AA)
 
         # Bottom Sentence & Grammar Panel
         bot_bar = frame.copy()
-        cv2.rectangle(bot_bar, (0, h - 110), (w, h), (14, 18, 24), -1)
+        cv2.rectangle(bot_bar, (0, h - 95), (w, h), (14, 18, 24), -1)
         cv2.addWeighted(bot_bar, 0.90, frame, 0.10, 0, frame)
+        cv2.line(frame, (0, h - 95), (w, h - 95), (45, 55, 75), 1)
 
         # Raw Token Stream
         raw_tokens = self.token_buffer.get_text()
-        cv2.putText(frame, f"ISL Tokens: {raw_tokens if raw_tokens else '...'}", (15, h - 80), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (180, 180, 180), 1, cv2.LINE_AA)
+        token_display = raw_tokens if raw_tokens else "[None]"
+        cv2.putText(frame, f"ISL Tokens: {token_display}", (14, h - 68), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (175, 175, 175), 1, cv2.LINE_AA)
 
         # Corrected Natural Sentence
         if self.last_grammar_result and self.last_grammar_result.corrected_text:
             corrected_display = self.last_grammar_result.corrected_text
         else:
             corrected_display = "..."
-        cv2.putText(frame, f"English: \"{corrected_display}\"", (15, h - 50), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
 
-        # Hindi Translation (if available)
-        if self.last_translated_text and self.current_language == "hi":
-            # Note: OpenCV putText has limited UTF-8 devanagari glyph support; show label or romanized status
-            cv2.putText(frame, f"Hindi: [Voice Output Active]", (15, h - 22), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 220, 255), 1, cv2.LINE_AA)
-        else:
-            cv2.putText(frame, "Controls: [ENTER] Speak | [SPACE] Space | [BACKSPACE] Del | [C] Clear | [T] TTS | [L] Lang | [Q] Quit", (15, h - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (140, 140, 140), 1, cv2.LINE_AA)
+        sent_prefix = "English" if self.current_language == "en" else "Speech"
+        cv2.putText(frame, f"{sent_prefix}: \"{corrected_display}\"", (14, h - 42), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (255, 255, 255), 2, cv2.LINE_AA)
+
+        # Controls Legend (Always visible and properly fitted)
+        controls_text = "[ENTER] Speak | [SPACE] Space | [BS] Del | [C] Clear | [T] TTS | [L] Lang | [Q] Quit"
+        cv2.putText(frame, controls_text, (14, h - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (135, 145, 155), 1, cv2.LINE_AA)
 
         return frame
 
     def run(self) -> None:
         """Launch interactive webcam recognition loop."""
         print("=" * 68)
-        print("  SIGNBRIDGE AI — Real-Time Multimodal Recognition & Speech (Week 5)")
+        print("  SIGNBRIDGE AI - Real-Time Multimodal Recognition & Speech (Week 5)")
         print("  Pipeline: Camera -> MediaPipe -> Static/Dynamic Fusion -> Grammar -> TTS")
         print("=" * 68)
         print("Loading AI models...")
 
-        window_name = "SignBridge AI — Live Multimodal Recognition (Week 5)"
+        window_name = "SignBridge AI - Live Multimodal Recognition (Week 5)"
         cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
 
         try:

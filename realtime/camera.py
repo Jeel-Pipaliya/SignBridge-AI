@@ -61,10 +61,10 @@ class Camera:
 
         backends = []
         if sys.platform.startswith("win"):
-            # Try CAP_ANY (uses preferred system backend like MSMF), then DSHOW, then MSMF
+            # Put DSHOW first on Windows (fastest open, stable buffers, no black frames), then ANY, then MSMF
             backends = [
-                ("ANY", cv2.CAP_ANY),
                 ("DSHOW", cv2.CAP_DSHOW),
+                ("ANY", cv2.CAP_ANY),
                 ("MSMF", cv2.CAP_MSMF),
             ]
         else:
