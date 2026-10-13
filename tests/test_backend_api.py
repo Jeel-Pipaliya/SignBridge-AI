@@ -256,6 +256,46 @@ class TestBackendAPI(unittest.TestCase):
         self.assertEqual(res_clear.status_code, 200)
         self.assertEqual(res_clear.json()["status"], "success")
 
+    def test_09_tutor_landmark_similarity(self):
+        # 1. Test landmark prediction with target sign
+        sample_landmarks = [{"x": 0.5 + (i * 0.01), "y": 0.5 + (i * 0.015), "z": 0.0} for i in range(21)]
+        req = {
+            "landmarks": sample_landmarks,
+            "handedness": "Right",
+            "target_sign": "A",
+        }
+        res = self.client.post("/api/v1/recognition/predict-landmarks", json=req)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["target_sign"], "A")
+        self.assertIsInstance(data["target_similarity"], float)
+        self.assertGreaterEqual(data["target_similarity"], 0.0)
+        self.assertLessEqual(data["target_similarity"], 1.0)
+        self.assertIsInstance(data["is_target_match"], bool)
+        self.assertIsNotNone(data["feedback_message"])
+        self.assertGreater(len(data["feedback_message"]), 5)
+
+        # 2. Test frame prediction with target sign and no hand
+        import base64
+        import cv2
+        import numpy as np
+        img = np.zeros((120, 160, 3), dtype=np.uint8)
+        _, buf = cv2.imencode('.jpg', img)
+        b64 = 'data:image/jpeg;base64,' + base64.b64encode(buf).decode('utf-8')
+
+        frame_req = {
+            "image": b64,
+            "target_sign": "B",
+        }
+        res_frame = self.client.post("/api/v1/recognition/predict-frame", json=frame_req)
+        self.assertEqual(res_frame.status_code, 200)
+        frame_data = res_frame.json()
+        self.assertFalse(frame_data["hand_detected"])
+        self.assertEqual(frame_data["target_sign"], "B")
+        self.assertEqual(frame_data["target_similarity"], 0.0)
+        self.assertFalse(frame_data["is_target_match"])
+        self.assertIn("No hand detected", frame_data["feedback_message"])
+
 
 if __name__ == "__main__":
     unittest.main()

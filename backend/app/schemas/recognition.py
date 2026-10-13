@@ -19,6 +19,7 @@ class LandmarkPredictRequest(BaseModel):
     )
     handedness: Optional[str] = "Right"
     confidence_threshold: Optional[float] = None
+    target_sign: Optional[str] = Field(None, description="Optional target ISL sign for tutor landmark similarity evaluation")
 
 
 class SequencePredictRequest(BaseModel):
@@ -27,6 +28,7 @@ class SequencePredictRequest(BaseModel):
         description="Temporal sequence of hand landmark frames (e.g., 30 frames x 21 points / 63 features)"
     )
     confidence_threshold: Optional[float] = None
+    target_sign: Optional[str] = None
 
 
 class CandidatePrediction(BaseModel):
@@ -37,6 +39,7 @@ class CandidatePrediction(BaseModel):
 class FramePredictRequest(BaseModel):
     image: str = Field(..., description="Base64 encoded JPEG or PNG image frame")
     confidence_threshold: Optional[float] = None
+    target_sign: Optional[str] = Field(None, description="Optional target ISL sign for tutor landmark similarity evaluation")
 
 
 class PredictionResponse(BaseModel):
@@ -51,6 +54,10 @@ class PredictionResponse(BaseModel):
     handedness: Optional[str] = None
     hand_detected: bool = True
     landmarks: Optional[List[LandmarkPoint]] = None
+    target_sign: Optional[str] = None
+    target_similarity: Optional[float] = None
+    is_target_match: Optional[bool] = None
+    feedback_message: Optional[str] = None
 
 
 class GrammarCorrectRequest(BaseModel):

@@ -33,6 +33,7 @@ class RecognitionService:
         self._dynamic_predictor: Optional[DynamicSignPredictor] = None
         self._static_metadata: Dict[str, Any] = {}
         self._dynamic_metadata: Dict[str, Any] = {}
+        self._class_centroids: Dict[str, np.ndarray] = {}
         self._initialize_models()
 
     def _initialize_models(self) -> None:
@@ -90,6 +91,132 @@ class RecognitionService:
                     self._dynamic_metadata = json.load(f)
             except Exception as err:
                 logger.warning(f"Error reading dynamic metadata: {err}")
+
+        # 4. Load Canonical Landmark Centroids for Real Geometric Tutor Similarity
+        self._load_canonical_centroids()
+
+    def _load_canonical_centroids(self) -> None:
+        """Computes unit-normalized class prototypes from training landmarks for tutor similarity."""
+        train_feat_path = PROJECT_ROOT / "ai" / "data" / "landmarks" / "train" / "features.npy"
+        train_labels_path = PROJECT_ROOT / "ai" / "data" / "landmarks" / "train" / "labels.npy"
+        self._class_prototypes: Dict[str, List[np.ndarray]] = {}
+
+        if train_feat_path.exists() and train_labels_path.exists():
+            try:
+                feats = np.load(train_feat_path)
+                labels = np.load(train_labels_path, allow_pickle=True)
+                for lbl in np.unique(labels):
+                    mask = (labels == lbl)
+                    sub = feats[mask]
+                    if len(sub) == 0:
+                        continue
+
+                    lbl_key = str(lbl).strip().upper()
+                    # 1. Mean centroid
+                    c = np.mean(sub, axis=0)
+                    norm = np.linalg.norm(c)
+                    exemplars = [c / norm if norm > 1e-9 else c]
+
+                    # 2. Add top medoids
+                    if len(sub) > 1:
+                        sub_norms = np.linalg.norm(sub, axis=1, keepdims=True) + 1e-9
+                        normed_sub = sub / sub_norms
+                        sim_matrix = np.dot(normed_sub, normed_sub.T)
+                        avg_sims = np.mean(sim_matrix, axis=1)
+                        best_indices = np.argsort(avg_sims)[::-1][:min(3, len(sub))]
+                        for idx in best_indices:
+                            exemplars.append(normed_sub[idx])
+
+                    self._class_prototypes[lbl_key] = exemplars
+                    self._class_centroids[lbl_key] = exemplars[0]
+
+                logger.info(f"Initialized {len(self._class_prototypes)} canonical landmark prototype classes for Tutor mode")
+            except Exception as err:
+                logger.warning(f"Could not load landmark training features for prototypes: {err}")
+
+    def compute_target_similarity(
+        self,
+        features: np.ndarray,
+        target_sign: str,
+        predicted_sign: str,
+        class_probabilities: Optional[Dict[str, float]] = None,
+    ) -> Tuple[float, bool, str]:
+        """
+        Calculates geometric landmark cosine similarity against the canonical target gesture,
+        blended with class classification probability and anatomical alignment feedback.
+        """
+        target_norm = target_sign.strip().upper()
+        pred_norm = predicted_sign.strip().upper() if predicted_sign else ""
+        class_probs = class_probabilities or {}
+
+        # 1. Model classification probability for the target sign
+        target_prob = float(class_probs.get(target_norm, class_probs.get(target_sign, 0.0)))
+
+        # 2. Geometric alignment against canonical landmark prototypes (with mirror symmetry)
+        geom_similarity = 0.0
+        prototypes = getattr(self, "_class_prototypes", {}).get(target_norm)
+        if not prototypes and target_norm in self._class_centroids:
+            prototypes = [self._class_centroids[target_norm]]
+
+        if prototypes:
+            feat_norm = np.linalg.norm(features)
+            if feat_norm > 1e-9:
+                f_unit = features / feat_norm
+
+                # Also generate mirrored vector (x -> -x) for mirrored webcams / opposite hand
+                f_mirror = features.copy().reshape(-1, 3)
+                f_mirror[:, 0] = -f_mirror[:, 0]
+                f_mirror_unit = f_mirror.flatten() / feat_norm
+
+                best_cos = -1.0
+                for proto in prototypes:
+                    cos1 = float(np.dot(f_unit, proto))
+                    cos2 = float(np.dot(f_mirror_unit, proto))
+                    best_cos = max(best_cos, cos1, cos2)
+
+                # Scale cosine range [-0.10, 0.92] to intuitive [0.0, 1.0]
+                geom_similarity = float(np.clip((best_cos - 0.10) / (0.90 - 0.10), 0.0, 1.0))
+            else:
+                geom_similarity = 0.0
+        else:
+            geom_similarity = target_prob
+
+        # 3. Blended continuous similarity score
+        is_exact_match = (pred_norm == target_norm)
+        if is_exact_match:
+            # Top class matched target
+            score = max(geom_similarity, target_prob, 0.78)
+        elif target_prob >= 0.25:
+            # High probability candidate for target
+            score = 0.60 * geom_similarity + 0.40 * target_prob
+            if geom_similarity >= 0.70:
+                score = max(score, 0.72)
+        else:
+            # Another sign predicted or hand forming gesture
+            if geom_similarity >= 0.75:
+                # Strong landmark pose match even if classifier flagged similar class
+                score = max(0.68, geom_similarity * 0.90)
+            else:
+                score = min(geom_similarity * 0.85, 0.65)
+
+        final_similarity = round(float(np.clip(score, 0.0, 0.98)), 4)
+        is_match = bool(final_similarity >= 0.70 or (is_exact_match and target_prob >= 0.55))
+
+        # 4. Generate anatomical, pedagogical feedback
+        if is_match or final_similarity >= 0.72:
+            feedback = f"Excellent! Your hand pose accurately matches '{target_sign}'."
+        elif final_similarity >= 0.45:
+            if pred_norm and pred_norm != target_norm and pred_norm not in ("UNKNOWN", "UNKNOWN / LOW CONFIDENCE"):
+                feedback = f"Forming '{target_sign}': Currently leaning towards '{pred_norm}'. Adjust finger angles."
+            else:
+                feedback = f"Good attempt! Refine your finger extension and wrist alignment for '{target_sign}'."
+        else:
+            if pred_norm and pred_norm != target_norm and pred_norm not in ("UNKNOWN", "UNKNOWN / LOW CONFIDENCE"):
+                feedback = f"Hand pose detected as '{pred_norm}'. Realign your fingers according to the '{target_sign}' guide."
+            else:
+                feedback = f"Hand pose does not yet match '{target_sign}'. Follow the anatomical illustration."
+
+        return final_similarity, is_match, feedback
 
     @property
     def is_static_available(self) -> bool:
@@ -174,6 +301,7 @@ class RecognitionService:
         landmarks: Union[List[LandmarkPoint], List[List[float]], List[float]],
         handedness: Optional[str] = "Right",
         confidence_threshold: Optional[float] = None,
+        target_sign: Optional[str] = None,
     ) -> PredictionResponse:
         """Executes real-time static sign classification on landmark payload."""
         threshold = confidence_threshold if confidence_threshold is not None else settings.CONFIDENCE_THRESHOLD
@@ -190,6 +318,10 @@ class RecognitionService:
                 top_candidates=[],
                 inference_duration_ms=0.0,
                 handedness=handedness,
+                target_sign=target_sign,
+                target_similarity=0.0 if target_sign else None,
+                is_target_match=False if target_sign else None,
+                feedback_message="Static model unavailable." if target_sign else None,
             )
 
         try:
@@ -212,6 +344,18 @@ class RecognitionService:
             # Always output the real-world sign prediction without masking as 'Unknown'
             predicted_label = result.raw_label if (result.raw_label and result.raw_label not in ("Unknown", "Unknown / Low Confidence")) else result.label
 
+            # Compute target similarity if practicing with a target sign
+            target_sim = None
+            is_match = None
+            feedback = None
+            if target_sign:
+                target_sim, is_match, feedback = self.compute_target_similarity(
+                    features=features,
+                    target_sign=target_sign,
+                    predicted_sign=predicted_label,
+                    class_probabilities=result.all_probabilities,
+                )
+
             return PredictionResponse(
                 predicted_sign=predicted_label,
                 confidence=float(result.confidence),
@@ -222,6 +366,10 @@ class RecognitionService:
                 top_candidates=candidates,
                 inference_duration_ms=round(duration_ms, 2),
                 handedness=handedness,
+                target_sign=target_sign,
+                target_similarity=target_sim,
+                is_target_match=is_match,
+                feedback_message=feedback,
             )
         except Exception as err:
             logger.error(f"Inference error in predict_landmarks: {err}")
@@ -236,6 +384,10 @@ class RecognitionService:
                 top_candidates=[],
                 inference_duration_ms=round(duration_ms, 2),
                 handedness=handedness,
+                target_sign=target_sign,
+                target_similarity=0.0 if target_sign else None,
+                is_target_match=False if target_sign else None,
+                feedback_message="Could not analyze hand landmarks." if target_sign else None,
             )
 
     def predict_sequence(
@@ -313,10 +465,11 @@ class RecognitionService:
         self,
         image_data: str,
         confidence_threshold: Optional[float] = None,
+        target_sign: Optional[str] = None,
     ) -> PredictionResponse:
         """
         Processes a base64 encoded video camera frame, runs MediaPipe HandDetector,
-        extracts 21 3D landmarks, and performs invariant classification.
+        extracts 21 3D landmarks, and performs invariant classification and target similarity.
         """
         start_time = time.perf_counter()
         threshold = confidence_threshold if confidence_threshold is not None else settings.CONFIDENCE_THRESHOLD
@@ -357,6 +510,10 @@ class RecognitionService:
                     handedness=None,
                     hand_detected=False,
                     landmarks=[],
+                    target_sign=target_sign,
+                    target_similarity=0.0 if target_sign else None,
+                    is_target_match=False if target_sign else None,
+                    feedback_message=f"No hand detected. Position your hand clearly in camera to practice '{target_sign}'." if target_sign else None,
                 )
 
             primary_hand = detected_hands[0]
@@ -369,6 +526,7 @@ class RecognitionService:
                 landmarks=landmarks_list,
                 handedness=primary_hand.handedness,
                 confidence_threshold=threshold,
+                target_sign=target_sign,
             )
             pred_response.hand_detected = True
             pred_response.landmarks = landmarks_list
@@ -391,6 +549,10 @@ class RecognitionService:
                 handedness=None,
                 hand_detected=False,
                 landmarks=[],
+                target_sign=target_sign,
+                target_similarity=0.0 if target_sign else None,
+                is_target_match=False if target_sign else None,
+                feedback_message="Could not process video frame." if target_sign else None,
             )
 
 

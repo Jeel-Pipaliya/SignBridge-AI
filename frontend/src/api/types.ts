@@ -69,6 +69,10 @@ export interface PredictionResponse {
   handedness?: string;
   hand_detected?: boolean;
   landmarks?: LandmarkPoint[];
+  target_sign?: string;
+  target_similarity?: number;
+  is_target_match?: boolean;
+  feedback_message?: string;
 }
 
 export interface GrammarCorrectResponse {

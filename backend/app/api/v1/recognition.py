@@ -38,6 +38,7 @@ def predict_frame(
     response = recognition_service.predict_frame(
         image_data=request.image,
         confidence_threshold=request.confidence_threshold,
+        target_sign=request.target_sign,
     )
 
     if current_user and response.is_recognized:
@@ -78,6 +79,7 @@ def predict_landmarks(
         landmarks=request.landmarks,
         handedness=request.handedness,
         confidence_threshold=request.confidence_threshold,
+        target_sign=request.target_sign,
     )
 
     # If authenticated user has history persistence enabled, record event

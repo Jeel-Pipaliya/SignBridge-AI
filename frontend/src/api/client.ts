@@ -118,19 +118,20 @@ class ApiClient {
   }
 
   // Recognition
-  async predictFrame(imageData: string, threshold?: number): Promise<PredictionResponse> {
+  async predictFrame(imageData: string, threshold?: number, targetSign?: string): Promise<PredictionResponse> {
     const res = await fetch(`${API_BASE}/recognition/predict-frame`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({
         image: imageData,
         confidence_threshold: threshold,
+        target_sign: targetSign,
       }),
     });
     return this.handleResponse<PredictionResponse>(res);
   }
 
-  async predictLandmarks(landmarks: Array<{ x: number; y: number; z: number }>, threshold?: number): Promise<PredictionResponse> {
+  async predictLandmarks(landmarks: Array<{ x: number; y: number; z: number }>, threshold?: number, targetSign?: string): Promise<PredictionResponse> {
     const res = await fetch(`${API_BASE}/recognition/predict-landmarks`, {
       method: 'POST',
       headers: this.getHeaders(),
@@ -138,6 +139,7 @@ class ApiClient {
         landmarks,
         handedness: 'Right',
         confidence_threshold: threshold,
+        target_sign: targetSign,
       }),
     });
     return this.handleResponse<PredictionResponse>(res);

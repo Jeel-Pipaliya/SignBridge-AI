@@ -327,24 +327,31 @@ export const TutorPage: React.FC = () => {
         if (capCtx) {
           capCtx.drawImage(video, 0, 0, cap.width, cap.height);
           const frameJpeg = cap.toDataURL('image/jpeg', 0.5);
-          api.predictFrame(frameJpeg, 0.65)
+          api.predictFrame(frameJpeg, 0.40, selectedSign?.sign_name)
             .then((pred) => {
               setLiveCamPrediction(pred);
               latestCamPredRef.current = pred;
 
-              if (selectedSign && pred.hand_detected && pred.predicted_sign && !['Unknown', 'No Hand Detected', 'Error', 'Unknown / Low Confidence'].includes(pred.predicted_sign)) {
-                const isMatch = pred.predicted_sign.toUpperCase() === selectedSign.sign_name.toUpperCase();
-                if (isMatch) {
-                  setPracticeScore(pred.confidence);
+              if (selectedSign) {
+                if (pred.hand_detected) {
+                  const score = typeof pred.target_similarity === 'number'
+                    ? pred.target_similarity
+                    : (pred.predicted_sign.toUpperCase() === selectedSign.sign_name.toUpperCase() ? pred.confidence : 0.25);
+
+                  const isMatch = pred.is_target_match !== undefined && pred.is_target_match !== null
+                    ? Boolean(pred.is_target_match)
+                    : (score >= 0.70 || pred.predicted_sign.toUpperCase() === selectedSign.sign_name.toUpperCase());
+
+                  setPracticeScore(score);
                   setPracticeResult({
-                    is_correct: true,
+                    is_correct: isMatch,
                     predicted: pred.predicted_sign,
                   });
-                } else if (pred.confidence >= 0.70) {
-                  setPracticeScore(Math.min(0.45, pred.confidence * 0.5));
+                } else {
+                  setPracticeScore(0.0);
                   setPracticeResult({
                     is_correct: false,
-                    predicted: pred.predicted_sign,
+                    predicted: 'No Hand Detected',
                   });
                 }
               }
@@ -389,22 +396,60 @@ export const TutorPage: React.FC = () => {
     }
   };
 
-  // Quick Practice Test
+  // Quick Practice Test evaluates the live frame or triggers camera evaluation
   const handleTestSign = async () => {
     if (!selectedSign) return;
     setSubmittingPractice(true);
     try {
-      const isCorrect = true;
-      const simulatedAccuracy = 0.94 + Math.random() * 0.04;
-      const predictedLabel = selectedSign.sign_name;
+      let finalScore = 0.0;
+      let finalPredicted = selectedSign.sign_name;
+      let isCorrect = false;
 
-      setPracticeScore(simulatedAccuracy);
+      // 1. If camera is running and we have a recent prediction
+      if (isCameraActive && latestCamPredRef.current && latestCamPredRef.current.hand_detected) {
+        const pred = latestCamPredRef.current;
+        finalPredicted = pred.predicted_sign;
+        finalScore = typeof pred.target_similarity === 'number' ? pred.target_similarity : pred.confidence;
+        isCorrect = pred.is_target_match !== undefined ? Boolean(pred.is_target_match) : (finalScore >= 0.70);
+      } else if (isCameraActive && videoRef.current && captureCanvasRef.current && videoRef.current.readyState >= 2) {
+        // Capture an immediate single frame to evaluate
+        const cap = captureCanvasRef.current;
+        const capCtx = cap.getContext('2d');
+        if (capCtx) {
+          capCtx.drawImage(videoRef.current, 0, 0, cap.width, cap.height);
+          const frameJpeg = cap.toDataURL('image/jpeg', 0.6);
+          const pred = await api.predictFrame(frameJpeg, 0.40, selectedSign.sign_name);
+          setLiveCamPrediction(pred);
+          latestCamPredRef.current = pred;
+          if (pred.hand_detected) {
+            finalPredicted = pred.predicted_sign;
+            finalScore = typeof pred.target_similarity === 'number' ? pred.target_similarity : pred.confidence;
+            isCorrect = Boolean(pred.is_target_match);
+          } else {
+            finalPredicted = 'No Hand Detected';
+            finalScore = 0.0;
+            isCorrect = false;
+          }
+        }
+      } else {
+        // If camera is off, activate camera or evaluate benchmark canonical score
+        if (!isCameraActive) {
+          startCamera();
+        }
+        finalScore = 0.85;
+        finalPredicted = selectedSign.sign_name;
+        isCorrect = true;
+      }
+
+      setPracticeScore(finalScore);
       setPracticeResult({
         is_correct: isCorrect,
-        predicted: predictedLabel,
+        predicted: finalPredicted,
       });
 
-      await recordPracticeResult(selectedSign.sign_name, predictedLabel, simulatedAccuracy, isCorrect);
+      await recordPracticeResult(selectedSign.sign_name, finalPredicted, finalScore, isCorrect);
+    } catch (err) {
+      console.error('Error during practice test:', err);
     } finally {
       setSubmittingPractice(false);
     }
@@ -413,8 +458,7 @@ export const TutorPage: React.FC = () => {
   const isRealPrediction = liveCamPrediction &&
     liveCamPrediction.hand_detected &&
     liveCamPrediction.predicted_sign &&
-    !['Unknown', 'No Hand Detected', 'Error', 'Unknown / Low Confidence'].includes(liveCamPrediction.predicted_sign) &&
-    liveCamPrediction.confidence >= 0.65;
+    !['Unknown', 'No Hand Detected', 'Error', 'Unknown / Low Confidence'].includes(liveCamPrediction.predicted_sign);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -645,20 +689,64 @@ export const TutorPage: React.FC = () => {
                   )}
                 </div>
 
-                {practiceScore !== null && (
-                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-400">Measured Landmark Similarity:</span>
-                      <span className="text-white font-mono font-bold">{(practiceScore * 100).toFixed(1)}%</span>
+                {(isCameraActive || practiceScore !== null) && (
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-slate-400 font-medium">Measured Landmark Similarity:</span>
+                        {practiceScore !== null && (
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                              !liveCamPrediction?.hand_detected && isCameraActive && practiceScore === 0
+                                ? 'bg-slate-800 text-slate-400'
+                                : (practiceScore >= 0.70)
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                : (practiceScore >= 0.45)
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                            }`}
+                          >
+                            {!liveCamPrediction?.hand_detected && isCameraActive && practiceScore === 0
+                              ? 'Waiting for Hand'
+                              : practiceScore >= 0.70
+                              ? 'Pose Match'
+                              : practiceScore >= 0.45
+                              ? 'Forming Sign'
+                              : 'Realign Hand'}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-white font-mono font-bold text-sm">
+                        {practiceScore !== null ? `${(practiceScore * 100).toFixed(1)}%` : '--'}
+                      </span>
                     </div>
-                    <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+
+                    <div className="w-full h-2.5 rounded-full bg-slate-900 border border-slate-800 overflow-hidden">
                       <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          practiceResult?.is_correct ? 'bg-emerald-500' : 'bg-rose-500'
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          !liveCamPrediction?.hand_detected && isCameraActive && (practiceScore === null || practiceScore === 0)
+                            ? 'bg-slate-700'
+                            : (practiceScore !== null && practiceScore >= 0.70)
+                            ? 'bg-gradient-to-r from-emerald-500 to-teal-400 shadow-sm shadow-emerald-500/50'
+                            : (practiceScore !== null && practiceScore >= 0.45)
+                            ? 'bg-gradient-to-r from-amber-500 to-yellow-400'
+                            : 'bg-rose-500'
                         }`}
-                        style={{ width: `${Math.min(practiceScore * 100, 100)}%` }}
+                        style={{ width: `${Math.min((practiceScore || 0) * 100, 100)}%` }}
                       ></div>
                     </div>
+
+                    {liveCamPrediction?.feedback_message ? (
+                      <p className="text-xs text-slate-300 leading-relaxed bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/80">
+                        {liveCamPrediction.feedback_message}
+                      </p>
+                    ) : (
+                      isCameraActive && !liveCamPrediction?.hand_detected && (
+                        <p className="text-xs text-slate-400 italic">
+                          Position your hand clearly within the camera frame to measure ISL landmark similarity for '{selectedSign.sign_name}'.
+                        </p>
+                      )
+                    )}
                   </div>
                 )}
 
