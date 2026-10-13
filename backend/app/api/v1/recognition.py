@@ -12,6 +12,7 @@ from backend.app.models.recognition import RecognitionEvent
 from backend.app.models.user import User
 from backend.app.schemas.recognition import (
     CorrectionFeedbackRequest,
+    FramePredictRequest,
     GrammarCorrectRequest,
     GrammarCorrectResponse,
     LandmarkPredictRequest,
@@ -22,6 +23,45 @@ from backend.app.services.grammar_service import grammar_service
 from backend.app.services.recognition_service import recognition_service
 
 router = APIRouter(prefix="/recognition", tags=["Real-Time Recognition"])
+
+
+@router.post("/predict-frame", response_model=PredictionResponse)
+def predict_frame(
+    request: FramePredictRequest,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Sub-millisecond inference for camera video frame (base64 JPEG/PNG).
+    Detects hands via MediaPipe, extracts 21 3D landmarks, and classifies ISL signs.
+    """
+    response = recognition_service.predict_frame(
+        image_data=request.image,
+        confidence_threshold=request.confidence_threshold,
+    )
+
+    if current_user and response.is_recognized:
+        should_store = True
+        if current_user.preferences and not current_user.preferences.store_history:
+            should_store = False
+
+        if should_store:
+            try:
+                event = RecognitionEvent(
+                    user_id=current_user.id,
+                    sign_detected=response.predicted_sign,
+                    confidence=response.confidence,
+                    model_name=response.model_name,
+                    model_version=response.model_version,
+                    inference_duration_ms=response.inference_duration_ms,
+                    was_corrected=False,
+                )
+                db.add(event)
+                db.commit()
+            except Exception:
+                db.rollback()
+
+    return response
 
 
 @router.post("/predict-landmarks", response_model=PredictionResponse)

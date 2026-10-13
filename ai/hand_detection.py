@@ -161,7 +161,10 @@ class HandDetector:
 
 def run_hand_detection_demo() -> None:
     """Run interactive live camera hand detection demo (Week 1 Day 3)."""
-    from realtime.camera import Camera, CameraError
+    try:
+        from ai.realtime.camera import Camera, CameraError
+    except ImportError:
+        from realtime.camera import Camera, CameraError
 
     print("=" * 60)
     print(" SignBridge AI - Hand Detection & Landmark Tracking (Week 1 Day 3)")

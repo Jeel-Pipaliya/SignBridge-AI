@@ -5,8 +5,12 @@ SignBridge AI - Grammar & Sentence Reconstruction Service
 import logging
 from typing import List, Optional
 from backend.app.schemas.recognition import GrammarCorrectResponse
-from translation.isl_grammar import ISLGrammarEngine
-from translation.translator import translate_sentence
+try:
+    from ai.translation.isl_grammar import ISLGrammarEngine
+    from ai.translation.translator import translate_sentence
+except ImportError:
+    from translation.isl_grammar import ISLGrammarEngine
+    from translation.translator import translate_sentence
 
 logger = logging.getLogger("GrammarService")
 
@@ -24,11 +28,18 @@ class GrammarService:
         Reconstructs an ordered set of ISL tokens into a fluent English sentence,
         and optionally translates it to Hindi.
         """
-        raw_tokens = [t.strip().upper() for t in tokens if t.strip() and t.strip() != "..."]
-        raw_sentence = " ".join(raw_tokens)
+        original_text = " ".join([t.strip() for t in tokens if t.strip() and t.strip() != "..."]).strip()
+        is_natural_sentence = any(c.islower() for c in original_text) or any(p in original_text for p in [".", "?", "!", ","])
 
-        grammar_result = self._grammar_engine.process(raw_tokens)
-        corrected_sentence = grammar_result.corrected_text or raw_sentence
+        if is_natural_sentence and len(original_text.split()) >= 1:
+            corrected_sentence = original_text
+            raw_tokens = [t.strip() for t in tokens if t.strip() and t.strip() != "..."]
+            raw_sentence = original_text
+        else:
+            raw_tokens = [t.strip().upper() for t in tokens if t.strip() and t.strip() != "..."]
+            raw_sentence = " ".join(raw_tokens)
+            grammar_result = self._grammar_engine.process(raw_tokens)
+            corrected_sentence = grammar_result.corrected_text or raw_sentence
 
         translated_sentence: Optional[str] = None
         if target_language.lower() in ("hi", "hindi"):

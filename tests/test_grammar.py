@@ -10,8 +10,12 @@ Tests:
 """
 
 import unittest
-from translation.isl_grammar import ISLGrammarEngine, GrammarResult
-from translation.translator import translate_sentence
+try:
+    from ai.translation.isl_grammar import ISLGrammarEngine, GrammarResult
+    from ai.translation.translator import translate_sentence
+except ImportError:
+    from translation.isl_grammar import ISLGrammarEngine, GrammarResult
+    from translation.translator import translate_sentence
 
 
 class TestISLGrammarAndTranslation(unittest.TestCase):

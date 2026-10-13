@@ -30,7 +30,10 @@ from ai.feature_extraction import (
     get_feature_names,
     verify_invariance,
 )
-from data.collect_samples import DataCollector
+try:
+    from ai.data.collect_samples import DataCollector
+except ImportError:
+    from data.collect_samples import DataCollector
 
 
 class TestWeek1EnvironmentAndStructure(unittest.TestCase):

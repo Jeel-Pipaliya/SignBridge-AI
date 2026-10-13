@@ -32,13 +32,13 @@ export interface AuthResponse {
 export interface VocabularySign {
   id: number;
   sign_name: string;
-  category: 'alphabet' | 'number' | 'greeting' | 'phrase';
+  category: 'alphabet' | 'number' | 'greeting' | 'phrase' | 'word' | string;
   description?: string;
   gesture_type: 'static' | 'dynamic';
   difficulty: 'beginner' | 'intermediate' | 'advanced';
   thumbnail_url?: string;
   anatomical_tips?: string;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface VocabularyListResponse {
@@ -67,6 +67,8 @@ export interface PredictionResponse {
   top_candidates: CandidatePrediction[];
   inference_duration_ms: number;
   handedness?: string;
+  hand_detected?: boolean;
+  landmarks?: LandmarkPoint[];
 }
 
 export interface GrammarCorrectResponse {

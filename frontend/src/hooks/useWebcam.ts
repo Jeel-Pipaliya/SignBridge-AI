@@ -80,6 +80,19 @@ export const useWebcam = (options: UseWebcamOptions = {}) => {
     }
   }, []);
 
+  // Ensure mediaStream is always bound to videoRef whenever stream is created or video element mounts
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      if (videoRef.current.srcObject !== stream) {
+        videoRef.current.srcObject = stream;
+      }
+      videoRef.current.play().catch((err) => {
+        // Autoplay may reject if document is not interacted with yet
+        console.debug('Webcam autoplay deferred:', err);
+      });
+    }
+  }, [stream]);
+
   useEffect(() => {
     return () => {
       if (stream) {

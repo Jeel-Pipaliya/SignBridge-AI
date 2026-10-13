@@ -17,7 +17,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import config
 from ai.hand_detection import HandDetector
-from realtime.camera import Camera, CameraError
+try:
+    from ai.realtime.camera import Camera, CameraError
+except ImportError:
+    from realtime.camera import Camera, CameraError
 
 # ─── MediaPipe 21 Hand Landmarks Anatomy ─────────────────────────────────────
 LANDMARK_NAMES: Dict[int, str] = {

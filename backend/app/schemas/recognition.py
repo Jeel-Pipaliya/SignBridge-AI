@@ -34,6 +34,11 @@ class CandidatePrediction(BaseModel):
     confidence: float
 
 
+class FramePredictRequest(BaseModel):
+    image: str = Field(..., description="Base64 encoded JPEG or PNG image frame")
+    confidence_threshold: Optional[float] = None
+
+
 class PredictionResponse(BaseModel):
     predicted_sign: str
     confidence: float
@@ -44,6 +49,8 @@ class PredictionResponse(BaseModel):
     top_candidates: List[CandidatePrediction] = []
     inference_duration_ms: float
     handedness: Optional[str] = None
+    hand_detected: bool = True
+    landmarks: Optional[List[LandmarkPoint]] = None
 
 
 class GrammarCorrectRequest(BaseModel):

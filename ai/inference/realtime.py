@@ -41,12 +41,25 @@ from ai.predict import SignPredictor
 from ai.dynamic.predict import DynamicSignPredictor
 from ai.fusion.recognizer_fusion import StaticDynamicFusionEngine, RecognitionResult
 from ai.fusion.token_buffer import TokenBuffer
-from translation.isl_grammar import ISLGrammarEngine, GrammarResult
-from translation.translator import translate_sentence
-from speech.tts import TextToSpeechEngine
+try:
+    from ai.translation.isl_grammar import ISLGrammarEngine, GrammarResult
+    from ai.translation.translator import translate_sentence
+except ImportError:
+    from translation.isl_grammar import ISLGrammarEngine, GrammarResult
+    from translation.translator import translate_sentence
+
+try:
+    from ai.speech.tts import TextToSpeechEngine
+except ImportError:
+    from speech.tts import TextToSpeechEngine
+
 from ai.utils.logger import setup_logger
 from ai.utils.config import load_config
-from realtime.camera import Camera, CameraError
+
+try:
+    from ai.realtime.camera import Camera, CameraError
+except ImportError:
+    from realtime.camera import Camera, CameraError
 
 logger = setup_logger("RealtimeInference")
 

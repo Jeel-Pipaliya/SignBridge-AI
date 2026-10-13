@@ -27,7 +27,10 @@ from ai.predict import SignPredictor, PredictionResult
 from ai.dynamic.predict import DynamicSignPredictor, DynamicPredictionResult
 from ai.preprocessing.normalization import normalize_landmarks
 from ai.preprocessing.sequence_builder import SequenceBuilder
-from realtime.recognizer import TemporalSmoother
+try:
+    from ai.realtime.recognizer import TemporalSmoother
+except ImportError:
+    from realtime.recognizer import TemporalSmoother
 from ai.utils.logger import setup_logger
 
 logger = setup_logger("RecognizerFusion")

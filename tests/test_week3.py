@@ -23,8 +23,12 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import config
 from ai.predict import SignPredictor, PredictionResult
-from realtime.recognizer import TemporalSmoother, TextAccumulator
-from realtime.realtime_demo import draw_ui_overlay
+try:
+    from ai.realtime.recognizer import TemporalSmoother, TextAccumulator
+    from ai.realtime.realtime_demo import draw_ui_overlay
+except ImportError:
+    from realtime.recognizer import TemporalSmoother, TextAccumulator
+    from realtime.realtime_demo import draw_ui_overlay
 
 
 class TestWeek3ModelArtifacts(unittest.TestCase):

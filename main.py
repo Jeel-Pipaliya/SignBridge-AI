@@ -69,7 +69,10 @@ def main() -> None:
             engine.run()
 
     elif args.mode == "dynamic-collect":
-        from ai.data_collection.collect_dynamic import DynamicDataCollector
+        try:
+            from ai.data.collect_dynamic import DynamicDataCollector
+        except ImportError:
+            from ai.data_collection.collect_dynamic import DynamicDataCollector
         collector = DynamicDataCollector(initial_class=args.label, target_sequences=args.samples)
         collector.run()
 
@@ -82,7 +85,10 @@ def main() -> None:
         evaluate_dynamic_model()
 
     elif args.mode == "collect":
-        from data.collect_samples import run_collector
+        try:
+            from ai.data.collect_samples import run_collector
+        except ImportError:
+            from data.collect_samples import run_collector
         run_collector(initial_label=args.label, target_samples=args.samples)
 
     elif args.mode == "visualize":
@@ -98,11 +104,17 @@ def main() -> None:
         evaluate_model()
 
     elif args.mode == "stats":
-        from ai.data_analysis.dataset_statistics import compute_dataset_statistics
+        try:
+            from ai.data.dataset_statistics import compute_dataset_statistics
+        except ImportError:
+            from ai.data_analysis.dataset_statistics import compute_dataset_statistics
         compute_dataset_statistics()
 
     elif args.mode == "validate":
-        from ai.data_analysis.validate_dataset import validate_dataset
+        try:
+            from ai.data.validate_dataset import validate_dataset
+        except ImportError:
+            from ai.data_analysis.validate_dataset import validate_dataset
         validate_dataset()
 
     elif args.mode == "test":

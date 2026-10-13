@@ -78,7 +78,7 @@ export const RecognizePage: React.FC = () => {
 
   // Handle adding sign to sentence buffer (with de-duplication)
   const addToken = (sign: string) => {
-    if (!sign || sign === 'Unknown') return;
+    if (!sign || ['Unknown', 'No Hand Detected', 'Error'].includes(sign)) return;
     setTokens((prev) => {
       // Avoid rapid accidental identical bursts
       if (prev.length > 0 && prev[prev.length - 1] === sign) {
@@ -88,102 +88,210 @@ export const RecognizePage: React.FC = () => {
     });
   };
 
-  // Simulated Landmark Pipeline (allows full pipeline testing even without physical camera)
+  // 21-joint anatomical skeleton connections for MediaPipe hand rendering
+  const HAND_CONNECTIONS = [
+    [0, 1], [1, 2], [2, 3], [3, 4],         // Thumb
+    [0, 5], [5, 6], [6, 7], [7, 8],         // Index finger
+    [5, 9], [9, 10], [10, 11], [11, 12],    // Middle finger
+    [9, 13], [13, 14], [14, 15], [15, 16],  // Ring finger
+    [13, 17], [17, 18], [18, 19], [19, 20], // Pinky finger
+    [0, 17],                                // Palm base
+  ];
+
+  const captureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const stabilityCounterRef = useRef<{ sign: string; count: number }>({ sign: '', count: 0 });
+  const latestPredictionRef = useRef<PredictionResponse | null>(null);
+
+  // Direct Gesture Test Dispatcher (allows immediate sign testing without requiring camera)
   const runSimulatedInference = async (signKey: string = 'A') => {
     setIsProcessing(true);
     try {
-      // Construct 21 anatomical points
-      const pts = [];
-      for (let i = 0; i < 21; i++) {
-        pts.push({
-          x: 0.5 + Math.sin(i * 0.3) * 0.15,
-          y: 0.6 + Math.cos(i * 0.3) * 0.15,
-          z: i * 0.005,
-        });
-      }
-      const pred = await api.predictLandmarks(pts, threshold);
-      setCurrentPrediction(pred);
-      if (pred.is_recognized) {
-        addToken(pred.predicted_sign);
-      }
-    } catch (err) {
-      console.warn('Simulation inference error:', err);
+      const mockPred: PredictionResponse = {
+        predicted_sign: signKey,
+        confidence: 0.94,
+        is_recognized: true,
+        is_supported_vocabulary: true,
+        model_name: 'SignBridge_ISL_MLP_NeuralNet',
+        model_version: '1.0',
+        top_candidates: [
+          { sign: signKey, confidence: 0.94 },
+          { sign: 'B', confidence: 0.03 },
+        ],
+        inference_duration_ms: 15.2,
+        handedness: 'Right',
+        hand_detected: true,
+      };
+      setCurrentPrediction(mockPred);
+      latestPredictionRef.current = mockPred;
+      addToken(signKey);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // Continuous Camera Loop
+  // Continuous Camera Loop with Real-Time Frame Capture & Landmark Skeleton
   useEffect(() => {
     if (!isActive) return;
 
     let animationFrameId: number;
     let lastInferenceTime = 0;
+    let isRequestInFlight = false;
+
+    // Offscreen canvas for downsampled video frame capture
+    if (!captureCanvasRef.current) {
+      captureCanvasRef.current = document.createElement('canvas');
+      captureCanvasRef.current.width = 480;
+      captureCanvasRef.current.height = 360;
+    }
 
     const processLoop = async (timestamp: number) => {
       markFrame();
 
-      // Render video on canvas with landmark skeleton visualizer
-      if (videoRef.current && canvasRef.current) {
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+
+      if (video && canvas && video.readyState >= 2) {
         const ctx = canvas.getContext('2d');
+        if (ctx) {
+          const vw = video.videoWidth || 640;
+          const vh = video.videoHeight || 480;
+          if (canvas.width !== vw || canvas.height !== vh) {
+            canvas.width = vw;
+            canvas.height = vh;
+          }
+          // Clear overlay canvas
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        if (ctx && video.readyState >= 2) {
-          canvas.width = video.videoWidth || 640;
-          canvas.height = video.videoHeight || 480;
+          const pred = latestPredictionRef.current;
 
-          // Draw camera frame
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          // If hands and landmarks are detected by vision engine, draw anatomical skeleton
+          if (pred?.hand_detected && pred.landmarks && pred.landmarks.length === 21) {
+            const lms = pred.landmarks;
 
-          // Draw anatomical HUD overlay
-          ctx.strokeStyle = '#14b8a6';
-          ctx.lineWidth = 2;
-          ctx.fillStyle = '#5eead4';
+            // Draw glowing cyan bone lines
+            ctx.save();
+            ctx.strokeStyle = '#06b6d4';
+            ctx.lineWidth = 3;
+            ctx.shadowColor = '#22d3ee';
+            ctx.shadowBlur = 10;
+            ctx.lineCap = 'round';
 
-          const cx = canvas.width / 2;
-          const cy = canvas.height / 2;
+            for (const [p1, p2] of HAND_CONNECTIONS) {
+              if (lms[p1] && lms[p2]) {
+                ctx.beginPath();
+                ctx.moveTo(lms[p1].x * canvas.width, lms[p1].y * canvas.height);
+                ctx.lineTo(lms[p2].x * canvas.width, lms[p2].y * canvas.height);
+                ctx.stroke();
+              }
+            }
+            ctx.restore();
 
-          // Center guidance reticle
-          ctx.beginPath();
-          ctx.arc(cx, cy, 140, 0, 2 * Math.PI);
-          ctx.stroke();
+            // Draw joint nodes (amber for fingertips, teal/cyan for joints)
+            for (let i = 0; i < lms.length; i++) {
+              const isTip = [4, 8, 12, 16, 20].includes(i);
+              ctx.beginPath();
+              ctx.arc(lms[i].x * canvas.width, lms[i].y * canvas.height, isTip ? 6 : 4, 0, 2 * Math.PI);
+              ctx.fillStyle = isTip ? '#f59e0b' : '#38bdf8';
+              ctx.fill();
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 1.5;
+              ctx.stroke();
+            }
 
-          // Reticle labels
-          ctx.font = '12px "Plus Jakarta Sans", sans-serif';
-          ctx.fillStyle = '#94a3b8';
-          ctx.fillText('Position hand within recognition circle', cx - 110, cy - 150);
+            // Draw live tracking badge near wrist only for confirmed real-world sign
+            const isRealBadge = pred.is_recognized &&
+              pred.predicted_sign &&
+              !['Unknown', 'No Hand Detected', 'Error', 'Unknown / Low Confidence'].includes(pred.predicted_sign) &&
+              pred.confidence >= threshold;
+
+            if (lms[0] && isRealBadge) {
+              const wx = lms[0].x * canvas.width;
+              const wy = Math.min(lms[0].y * canvas.height + 25, canvas.height - 20);
+              ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+              ctx.roundRect ? ctx.roundRect(wx - 45, wy - 15, 90, 24, 6) : ctx.rect(wx - 45, wy - 15, 90, 24);
+              ctx.fill();
+              ctx.fillStyle = '#4ade80';
+              ctx.font = 'bold 12px "Plus Jakarta Sans", sans-serif';
+              ctx.textAlign = 'center';
+              ctx.fillText(`${pred.predicted_sign} (${(pred.confidence * 100).toFixed(0)}%)`, wx, wy + 2);
+            }
+          } else {
+            // Draw anatomical center guidance reticle when hand is not yet detected
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+
+            ctx.save();
+            ctx.strokeStyle = 'rgba(20, 184, 166, 0.4)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([8, 8]);
+            ctx.beginPath();
+            ctx.arc(cx, cy, 130, 0, 2 * Math.PI);
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.font = '12px "Plus Jakarta Sans", sans-serif';
+            ctx.fillStyle = '#cbd5e1';
+            ctx.textAlign = 'center';
+            ctx.fillText('Position hand in camera view to recognize ISL', cx, cy - 145);
+          }
         }
       }
 
-      // Throttle server inference to ~4 inferences per second (250ms) to preserve network
-      if (timestamp - lastInferenceTime > 250 && !isProcessing) {
+      // Send real video frame to backend MediaPipe inference engine every ~180ms
+      if (timestamp - lastInferenceTime > 180 && !isRequestInFlight) {
         lastInferenceTime = timestamp;
-        // Construct landmark payload from center region
-        const pts = [];
-        for (let i = 0; i < 21; i++) {
-          pts.push({
-            x: 0.5 + Math.sin(i * 0.25) * 0.12,
-            y: 0.55 + Math.cos(i * 0.25) * 0.12,
-            z: i * 0.004,
-          });
+
+        if (video && captureCanvasRef.current && video.readyState >= 2) {
+          isRequestInFlight = true;
+          const capCanvas = captureCanvasRef.current;
+          const capCtx = capCanvas.getContext('2d');
+
+          if (capCtx) {
+            capCtx.drawImage(video, 0, 0, capCanvas.width, capCanvas.height);
+            const frameJpeg = capCanvas.toDataURL('image/jpeg', 0.5);
+
+            api.predictFrame(frameJpeg, threshold)
+              .then((pred) => {
+                setCurrentPrediction(pred);
+                latestPredictionRef.current = pred;
+
+                // Token stability gating: require 2 stable consecutive detections of the real-world gesture
+                if (pred.is_recognized && pred.predicted_sign && !['Unknown', 'No Hand Detected', 'Error'].includes(pred.predicted_sign)) {
+                  if (stabilityCounterRef.current.sign === pred.predicted_sign) {
+                    stabilityCounterRef.current.count += 1;
+                    if (stabilityCounterRef.current.count >= 2) {
+                      addToken(pred.predicted_sign);
+                      stabilityCounterRef.current = { sign: '', count: 0 };
+                    }
+                  } else {
+                    stabilityCounterRef.current = { sign: pred.predicted_sign, count: 1 };
+                  }
+                } else {
+                  stabilityCounterRef.current = { sign: '', count: 0 };
+                }
+              })
+              .catch((err) => {
+                console.warn('Real-time frame prediction error:', err);
+              })
+              .finally(() => {
+                isRequestInFlight = false;
+              });
+          } else {
+            isRequestInFlight = false;
+          }
         }
-        api.predictLandmarks(pts, threshold)
-          .then((pred) => {
-            setCurrentPrediction(pred);
-            if (pred.is_recognized && pred.confidence >= threshold) {
-              addToken(pred.predicted_sign);
-            }
-          })
-          .catch(() => {});
       }
 
       animationFrameId = requestAnimationFrame(processLoop);
     };
 
     animationFrameId = requestAnimationFrame(processLoop);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [isActive, threshold, isProcessing, markFrame]);
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      latestPredictionRef.current = null;
+    };
+  }, [isActive, threshold, markFrame]);
+
 
   const handleCopy = () => {
     navigator.clipboard.writeText(grammarSentence || tokens.join(' '));
@@ -312,22 +420,27 @@ export const RecognizePage: React.FC = () => {
             </div>
 
             {/* Video & Canvas Stage */}
-            <div className="aspect-[4/3] bg-slate-950 relative flex items-center justify-center">
-              {/* Hidden raw video element supplying stream */}
+            <div className="aspect-[4/3] bg-slate-950 relative flex items-center justify-center overflow-hidden">
+              {/* Hardware accelerated video element */}
               <video
                 ref={videoRef}
                 playsInline
                 muted
-                className="hidden"
+                autoPlay
+                className={`w-full h-full object-cover transform -scale-x-100 ${
+                  isActive ? 'block' : 'hidden'
+                }`}
               />
 
-              {/* Canvas where frame and landmark overlays render */}
-              {isActive ? (
-                <canvas
-                  ref={canvasRef}
-                  className="w-full h-full object-cover transform -scale-x-100"
-                />
-              ) : (
+              {/* Canvas where landmark overlays render on top */}
+              <canvas
+                ref={canvasRef}
+                className={`absolute inset-0 w-full h-full pointer-events-none transform -scale-x-100 ${
+                  isActive ? 'block' : 'hidden'
+                }`}
+              />
+
+              {!isActive && (
                 <div className="text-center p-8 space-y-4 max-w-sm">
                   <div className="w-16 h-16 rounded-3xl bg-slate-900 border border-slate-800 text-slate-600 mx-auto flex items-center justify-center">
                     <VideoOff className="w-8 h-8" />
@@ -347,11 +460,14 @@ export const RecognizePage: React.FC = () => {
                 </div>
               )}
 
-              {/* Bottom HUD Overlay: Current Recognized Sign & Confidence */}
-              {currentPrediction && (
-                <div className="absolute bottom-4 inset-x-4 z-20 bg-slate-950/85 backdrop-blur-md border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between">
+              {/* Bottom HUD Overlay: Only show when a real-world sign is recognized with high confidence */}
+              {currentPrediction &&
+              currentPrediction.is_recognized &&
+              currentPrediction.confidence >= threshold &&
+              !['Unknown', 'No Hand Detected', 'Error', 'Unknown / Low Confidence'].includes(currentPrediction.predicted_sign) ? (
+                <div className="absolute bottom-4 inset-x-4 z-20 bg-slate-950/90 backdrop-blur-md border border-teal-500/40 rounded-2xl p-4 flex items-center justify-between shadow-xl">
                   <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 rounded-xl bg-teal-500/20 border border-teal-500/40 text-teal-300 font-extrabold text-2xl flex items-center justify-center shadow-lg shadow-teal-500/20">
+                    <div className="min-w-12 h-12 px-3 rounded-xl bg-teal-500/20 border border-teal-500/40 text-teal-300 font-extrabold text-2xl flex items-center justify-center shadow-lg shadow-teal-500/20">
                       {currentPrediction.predicted_sign}
                     </div>
                     <div>
@@ -359,14 +475,8 @@ export const RecognizePage: React.FC = () => {
                         <span className="text-sm font-bold text-white">
                           Sign: {currentPrediction.predicted_sign}
                         </span>
-                        <span
-                          className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                            currentPrediction.is_recognized
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                              : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                          }`}
-                        >
-                          {currentPrediction.is_recognized ? 'Recognized' : 'Low Confidence'}
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          Recognized
                         </span>
                       </div>
                       <p className="text-xs text-slate-400">
@@ -382,7 +492,12 @@ export const RecognizePage: React.FC = () => {
                     <p className="text-[10px] text-slate-500">Confidence</p>
                   </div>
                 </div>
-              )}
+              ) : isActive ? (
+                <div className="absolute bottom-4 left-4 z-20 px-3.5 py-1.5 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-800 text-xs text-slate-400 flex items-center space-x-2">
+                  <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse"></span>
+                  <span>Ready • Show real-world ISL sign</span>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -588,7 +703,12 @@ export const RecognizePage: React.FC = () => {
             ) : (
               <form onSubmit={handleCorrectionSubmit} className="space-y-3">
                 <p className="text-xs text-slate-400">
-                  Last detected sign was <span className="text-white font-bold">{currentPrediction?.predicted_sign || 'Unknown'}</span>. What was your intended sign?
+                  {currentPrediction?.predicted_sign &&
+                  !['Unknown', 'No Hand Detected', 'Error', 'Unknown / Low Confidence'].includes(currentPrediction.predicted_sign) ? (
+                    <>Last detected sign was <span className="text-white font-bold">{currentPrediction.predicted_sign}</span>. What was your intended sign?</>
+                  ) : (
+                    <>What was your intended sign?</>
+                  )}
                 </p>
                 <input
                   type="text"

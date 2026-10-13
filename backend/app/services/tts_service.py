@@ -4,7 +4,10 @@ SignBridge AI - Text-to-Speech Service
 
 import logging
 from typing import Dict, List, Optional
-from speech.tts import TextToSpeechEngine
+try:
+    from ai.speech.tts import TextToSpeechEngine
+except ImportError:
+    from speech.tts import TextToSpeechEngine
 
 logger = logging.getLogger("TTSService")
 

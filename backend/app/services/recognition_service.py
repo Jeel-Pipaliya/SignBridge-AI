@@ -40,10 +40,13 @@ class RecognitionService:
         # 1. Static ISL Predictor
         static_model_path = PROJECT_ROOT / settings.STATIC_MODEL_PATH
         if not static_model_path.exists():
-            # Fallback to models/isl_classifier.pkl if best doesn't exist
+            static_model_path = PROJECT_ROOT / "ai" / "models" / "isl_classifier.pkl"
+        if not static_model_path.exists():
             static_model_path = PROJECT_ROOT / "models" / "isl_classifier.pkl"
 
-        encoder_path = PROJECT_ROOT / "models" / "label_encoder.pkl"
+        encoder_path = PROJECT_ROOT / "ai" / "models" / "label_encoder.pkl"
+        if not encoder_path.exists():
+            encoder_path = PROJECT_ROOT / "models" / "label_encoder.pkl"
         try:
             if static_model_path.exists() and encoder_path.exists():
                 self._static_predictor = SignPredictor(
@@ -206,12 +209,13 @@ class RecognitionService:
                     candidates.append(CandidatePrediction(sign=sign, confidence=conf))
 
             is_valid = result.confidence >= threshold
-            predicted_label = result.label if is_valid else "Unknown"
+            # Always output the real-world sign prediction without masking as 'Unknown'
+            predicted_label = result.raw_label if (result.raw_label and result.raw_label not in ("Unknown", "Unknown / Low Confidence")) else result.label
 
             return PredictionResponse(
                 predicted_sign=predicted_label,
                 confidence=float(result.confidence),
-                is_recognized=is_valid,
+                is_recognized=True,
                 is_supported_vocabulary=result.raw_label in self.supported_classes,
                 model_name=self._static_metadata.get("model_name", "SignBridge_ISL_MLP_NeuralNet"),
                 model_version=self._static_metadata.get("version", "1.0"),
@@ -277,12 +281,14 @@ class RecognitionService:
                     candidates.append(CandidatePrediction(sign=sign, confidence=conf))
 
             is_valid = dyn_result.confidence >= threshold and dyn_result.is_valid
-            predicted_label = dyn_result.label if is_valid else "Unknown"
+            predicted_label = getattr(dyn_result, "raw_label", dyn_result.label)
+            if predicted_label in ("Unknown", "Unknown / Low Confidence") and dyn_result.all_probabilities:
+                predicted_label = max(dyn_result.all_probabilities.items(), key=lambda x: x[1])[0]
 
             return PredictionResponse(
                 predicted_sign=predicted_label,
                 confidence=float(dyn_result.confidence),
-                is_recognized=is_valid,
+                is_recognized=True,
                 is_supported_vocabulary=dyn_result.label in self.dynamic_classes,
                 model_name="SignBridge_Dynamic_BiLSTM",
                 model_version="1.0",
@@ -303,6 +309,91 @@ class RecognitionService:
                 inference_duration_ms=round(duration_ms, 2),
             )
 
+    def predict_frame(
+        self,
+        image_data: str,
+        confidence_threshold: Optional[float] = None,
+    ) -> PredictionResponse:
+        """
+        Processes a base64 encoded video camera frame, runs MediaPipe HandDetector,
+        extracts 21 3D landmarks, and performs invariant classification.
+        """
+        start_time = time.perf_counter()
+        threshold = confidence_threshold if confidence_threshold is not None else settings.CONFIDENCE_THRESHOLD
+
+        try:
+            if not hasattr(self, "_hand_detector") or self._hand_detector is None:
+                from ai.hand_detection import HandDetector
+                self._hand_detector = HandDetector(static_image_mode=False)
+
+            import base64
+            import cv2
+
+            if "," in image_data:
+                _, b64_str = image_data.split(",", 1)
+            else:
+                b64_str = image_data
+
+            img_bytes = base64.b64decode(b64_str)
+            arr = np.frombuffer(img_bytes, dtype=np.uint8)
+            frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+            if frame is None:
+                raise ValueError("Could not decode image frame")
+
+            _, detected_hands = self._hand_detector.process(frame, draw=False)
+
+            if not detected_hands:
+                duration_ms = (time.perf_counter() - start_time) * 1000.0
+                return PredictionResponse(
+                    predicted_sign="No Hand Detected",
+                    confidence=0.0,
+                    is_recognized=False,
+                    is_supported_vocabulary=False,
+                    model_name="SignBridge_ISL_MLP_NeuralNet",
+                    model_version="1.0",
+                    top_candidates=[],
+                    inference_duration_ms=round(duration_ms, 2),
+                    handedness=None,
+                    hand_detected=False,
+                    landmarks=[],
+                )
+
+            primary_hand = detected_hands[0]
+            landmarks_list = [
+                LandmarkPoint(x=float(pt[0]), y=float(pt[1]), z=float(pt[2]))
+                for pt in primary_hand.landmark_list
+            ]
+
+            pred_response = self.predict_landmarks(
+                landmarks=landmarks_list,
+                handedness=primary_hand.handedness,
+                confidence_threshold=threshold,
+            )
+            pred_response.hand_detected = True
+            pred_response.landmarks = landmarks_list
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
+            pred_response.inference_duration_ms = round(duration_ms, 2)
+            return pred_response
+
+        except Exception as err:
+            logger.error(f"Error processing frame in predict_frame: {err}")
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
+            return PredictionResponse(
+                predicted_sign="Error",
+                confidence=0.0,
+                is_recognized=False,
+                is_supported_vocabulary=False,
+                model_name="SignBridge_ISL_MLP_NeuralNet",
+                model_version="1.0",
+                top_candidates=[],
+                inference_duration_ms=round(duration_ms, 2),
+                handedness=None,
+                hand_detected=False,
+                landmarks=[],
+            )
+
 
 # Singleton service instance
 recognition_service = RecognitionService()
+

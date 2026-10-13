@@ -8,20 +8,25 @@ from pathlib import Path
 # Base Paths
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-# Data Paths
-DATA_DIR = PROJECT_ROOT / "data"
+# AI Subsystem Paths
+AI_DIR = PROJECT_ROOT / "ai"
+DATA_DIR = AI_DIR / "data" if (AI_DIR / "data").exists() else (PROJECT_ROOT / "data")
 RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
 TRAIN_DATA_DIR = DATA_DIR / "train"
 VAL_DATA_DIR = DATA_DIR / "validation"
 TEST_DATA_DIR = DATA_DIR / "test"
 
-# Output Paths
-OUTPUTS_DIR = PROJECT_ROOT / "outputs"
+# Output & Artifact Paths
+EVALUATION_DIR = AI_DIR / "evaluation"
+OUTPUTS_DIR = EVALUATION_DIR / "outputs" if (EVALUATION_DIR / "outputs").exists() else (PROJECT_ROOT / "outputs")
 PLOTS_DIR = OUTPUTS_DIR / "plots"
 CONFUSION_MATRIX_DIR = OUTPUTS_DIR / "confusion_matrix"
 PREDICTIONS_DIR = OUTPUTS_DIR / "predictions"
-MODELS_DIR = PROJECT_ROOT / "models"
+REPORTS_DIR = EVALUATION_DIR / "reports" if (EVALUATION_DIR / "reports").exists() else (PROJECT_ROOT / "reports")
+EXPERIMENTS_DIR = EVALUATION_DIR / "experiments"
+CONFIGS_DIR = AI_DIR / "configs"
+MODELS_DIR = AI_DIR / "models" if (AI_DIR / "models").exists() else (PROJECT_ROOT / "models")
 DOCS_DIR = PROJECT_ROOT / "docs"
 
 # Week 5 Dynamic Gesture Paths

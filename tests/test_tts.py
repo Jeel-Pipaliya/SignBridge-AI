@@ -11,7 +11,10 @@ import unittest
 from unittest.mock import MagicMock, patch
 import time
 
-from speech.tts import TextToSpeechEngine
+try:
+    from ai.speech.tts import TextToSpeechEngine
+except ImportError:
+    from speech.tts import TextToSpeechEngine
 
 
 class TestTextToSpeech(unittest.TestCase):

@@ -34,10 +34,22 @@ class Settings(BaseSettings):
     ]
 
     # Model and Asset Paths (relative to repository root)
-    STATIC_MODEL_PATH: str = os.getenv("STATIC_MODEL_PATH", "models/best/isl_classifier.pkl")
-    STATIC_METADATA_PATH: str = os.getenv("STATIC_METADATA_PATH", "models/metadata/model_metadata.json")
-    DYNAMIC_MODEL_PATH: str = os.getenv("DYNAMIC_MODEL_PATH", "models/dynamic/bilstm_dynamic.pt")
-    DYNAMIC_METADATA_PATH: str = os.getenv("DYNAMIC_METADATA_PATH", "models/metadata/dynamic_model_metadata.json")
+    STATIC_MODEL_PATH: str = os.getenv(
+        "STATIC_MODEL_PATH",
+        "ai/models/best/isl_classifier.pkl" if os.path.exists("ai/models/best/isl_classifier.pkl") else "models/best/isl_classifier.pkl",
+    )
+    STATIC_METADATA_PATH: str = os.getenv(
+        "STATIC_METADATA_PATH",
+        "ai/models/metadata/model_metadata.json" if os.path.exists("ai/models/metadata/model_metadata.json") else "models/metadata/model_metadata.json",
+    )
+    DYNAMIC_MODEL_PATH: str = os.getenv(
+        "DYNAMIC_MODEL_PATH",
+        "ai/models/dynamic/bilstm_dynamic.pt" if os.path.exists("ai/models/dynamic/bilstm_dynamic.pt") else "models/dynamic/bilstm_dynamic.pt",
+    )
+    DYNAMIC_METADATA_PATH: str = os.getenv(
+        "DYNAMIC_METADATA_PATH",
+        "ai/models/metadata/dynamic_model_metadata.json" if os.path.exists("ai/models/metadata/dynamic_model_metadata.json") else "models/metadata/dynamic_model_metadata.json",
+    )
 
     # Confidence Threshold Default
     CONFIDENCE_THRESHOLD: float = 0.70

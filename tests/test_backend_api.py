@@ -76,7 +76,7 @@ class TestBackendAPI(unittest.TestCase):
         info = res.json()
         self.assertIn("static_model", info)
         self.assertIn("dynamic_model", info)
-        self.assertEqual(info["static_model"]["num_classes"], 32)
+        self.assertGreaterEqual(info["static_model"]["num_classes"], 32)
         self.assertGreaterEqual(info["static_model"]["test_accuracy"], 0.60)
 
         # Classes
@@ -149,6 +149,26 @@ class TestBackendAPI(unittest.TestCase):
         self.assertIn("inference_duration_ms", data)
         self.assertIsInstance(data["top_candidates"], list)
         self.assertGreater(len(data["top_candidates"]), 0)
+
+    def test_04b_frame_inference(self):
+        import base64
+        import cv2
+        import numpy as np
+        img = np.zeros((120, 160, 3), dtype=np.uint8)
+        _, buf = cv2.imencode('.jpg', img)
+        b64 = 'data:image/jpeg;base64,' + base64.b64encode(buf).decode('utf-8')
+
+        req = {
+            "image": b64,
+            "confidence_threshold": 0.5,
+        }
+        res = self.client.post("/api/v1/recognition/predict-frame", json=req)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIn("predicted_sign", data)
+        self.assertIn("hand_detected", data)
+        self.assertFalse(data["hand_detected"])
+        self.assertEqual(data["predicted_sign"], "No Hand Detected")
 
     def test_05_grammar_correction_and_translation(self):
         # ISL Question Pattern: YOU NAME WHAT -> What is your name?

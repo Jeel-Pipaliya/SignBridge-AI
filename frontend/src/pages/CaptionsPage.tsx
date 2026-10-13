@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Captions,
   Mic,
@@ -49,15 +49,31 @@ export const CaptionsPage: React.FC = () => {
   const [currentInterim, setCurrentInterim] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
   const [consentAcknowledged, setConsentAcknowledged] = useState<boolean>(true);
+  const [isSimulating, setIsSimulating] = useState<boolean>(false);
+  const [manualInput, setManualInput] = useState<string>('');
+  const [micNotice, setMicNotice] = useState<string | null>(null);
+
+  const isCapturingRef = useRef<boolean>(false);
+  const simulationTimerRef = useRef<any>(null);
+
+  const SIMULATED_LECTURE_STREAM = [
+    { speaker: 'Professor Rao', text: 'Welcome everyone. In today\'s session, we examine Indian Sign Language grammar reconstruction.' },
+    { speaker: 'Student (Ananya)', text: 'Professor, how does the system preserve sentence structure with Subject-Object-Verb ordering?' },
+    { speaker: 'Professor Rao', text: 'ISL adheres to SOV order, whereas standard English utilizes Subject-Verb-Object. The deterministic grammar engine aligns the parts of speech.' },
+    { speaker: 'Guest Lecturer', text: 'Moreover, real-time MediaPipe feature normalization guarantees that wrist translation does not degrade landmark predictions.' },
+    { speaker: 'Student (Rohan)', text: 'Is the offline Text-to-Speech service accessible in multiple Indian languages?' },
+    { speaker: 'Professor Rao', text: 'Yes, SignBridge AI includes both English phonetics and Hindi Devanagari transliteration with bilingual audio synthesis.' },
+  ];
 
   const startCaptions = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Speech Recognition is not supported in this browser. Please use Chrome or Edge.');
+      setMicNotice('Web Speech API is unavailable in this browser. You can click "Simulate Meeting Stream" or type live captions below.');
       return;
     }
 
     try {
+      setMicNotice(null);
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
@@ -65,6 +81,7 @@ export const CaptionsPage: React.FC = () => {
 
       recognition.onstart = () => {
         setIsCapturing(true);
+        isCapturingRef.current = true;
       };
 
       recognition.onresult = (event: any) => {
@@ -89,29 +106,98 @@ export const CaptionsPage: React.FC = () => {
       };
 
       recognition.onerror = (e: any) => {
-        console.warn('Speech caption error:', e);
+        console.warn('Speech caption notice:', e);
+        if (e.error === 'not-allowed') {
+          setMicNotice('Microphone access was blocked. Please permit microphone permissions in your browser or run the Simulation mode.');
+        }
       };
 
       recognition.onend = () => {
-        setIsCapturing(false);
-        setCurrentInterim('');
+        // Auto-restart if user has not explicitly stopped
+        if (isCapturingRef.current) {
+          try {
+            recognition.start();
+          } catch {
+            setIsCapturing(false);
+            isCapturingRef.current = false;
+          }
+        } else {
+          setIsCapturing(false);
+          setCurrentInterim('');
+        }
       };
 
       (window as any)._activeCaptionRecognition = recognition;
       recognition.start();
-    } catch (err) {
-      console.warn('Speech capture exception:', err);
+    } catch (err: any) {
+      setMicNotice(`Could not initialize microphone: ${err.message}. Try "Simulate Meeting Stream" below.`);
     }
   };
 
   const stopCaptions = () => {
+    isCapturingRef.current = false;
     const rec = (window as any)._activeCaptionRecognition;
     if (rec) {
-      rec.stop();
+      try {
+        rec.stop();
+      } catch {}
       (window as any)._activeCaptionRecognition = null;
     }
     setIsCapturing(false);
     setCurrentInterim('');
+  };
+
+  // Toggle Simulated Meeting Stream
+  const toggleSimulation = () => {
+    if (isSimulating) {
+      clearInterval(simulationTimerRef.current);
+      setIsSimulating(false);
+      setCurrentInterim('');
+      return;
+    }
+
+    setIsSimulating(true);
+    let step = 0;
+
+    simulationTimerRef.current = setInterval(() => {
+      if (step < SIMULATED_LECTURE_STREAM.length) {
+        const item = SIMULATED_LECTURE_STREAM[step];
+        const newEntry: CaptionEntry = {
+          id: String(Date.now()),
+          speaker: item.speaker,
+          text: item.text,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        };
+        setEntries((prev) => [...prev, newEntry]);
+        step += 1;
+      } else {
+        clearInterval(simulationTimerRef.current);
+        setIsSimulating(false);
+      }
+    }, 3500);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (simulationTimerRef.current) {
+        clearInterval(simulationTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handlePostManualCaption = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!manualInput.trim()) return;
+
+    const newEntry: CaptionEntry = {
+      id: String(Date.now()),
+      speaker: activeSpeaker,
+      text: manualInput.trim(),
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    };
+
+    setEntries((prev) => [...prev, newEntry]);
+    setManualInput('');
   };
 
   const handleDownload = (format: 'txt' | 'json' | 'srt') => {
@@ -159,7 +245,18 @@ export const CaptionsPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={toggleSimulation}
+            className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center space-x-2 border transition-colors ${
+              isSimulating
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+            }`}
+          >
+            <span>{isSimulating ? 'Stop Stream Simulation' : 'Simulate Meeting Stream'}</span>
+          </button>
+
           {isCapturing ? (
             <button
               onClick={stopCaptions}
@@ -179,6 +276,14 @@ export const CaptionsPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {micNotice && (
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center space-x-2">
+          <Info className="w-4 h-4 flex-shrink-0" />
+          <span>{micNotice}</span>
+        </div>
+      )}
+
 
       {/* Recording Consent & Ethics Notice */}
       <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 text-xs text-slate-400 flex items-start justify-between gap-4">
@@ -268,7 +373,26 @@ export const CaptionsPage: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Live Caption Input / Stenographer Bar */}
+        <form onSubmit={handlePostManualCaption} className="pt-4 border-t border-slate-800 flex items-center gap-2">
+          <input
+            type="text"
+            placeholder={`Type real-time caption as ${activeSpeaker}... (Press Enter to post)`}
+            value={manualInput}
+            onChange={(e) => setManualInput(e.target.value)}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+          />
+          <button
+            type="submit"
+            disabled={!manualInput.trim()}
+            className="px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-40 text-slate-950 font-bold text-xs whitespace-nowrap shadow-md shadow-teal-500/20"
+          >
+            Post Caption
+          </button>
+        </form>
       </div>
     </div>
+
   );
 };

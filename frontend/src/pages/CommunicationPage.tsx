@@ -47,17 +47,71 @@ export const CommunicationPage: React.FC = () => {
   ]);
 
   const [inputText, setInputText] = useState<string>('');
+  const [activeSender, setActiveSender] = useState<'deaf_user' | 'hearing_user'>('deaf_user');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('hi');
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
-  // Web Speech Recognition setup
+  const QUICK_PHRASES = [
+    { text: "Hello! How can I assist you today?", sender: 'hearing_user' as const },
+    { text: "I want to drink water.", sender: 'deaf_user' as const },
+    { text: "Where is the consultation room?", sender: 'deaf_user' as const },
+    { text: "Please wait here, the doctor will see you shortly.", sender: 'hearing_user' as const },
+    { text: "Thank you for understanding.", sender: 'deaf_user' as const },
+  ];
+
+  const CLIENT_HINDI_DICTIONARY: Record<string, string> = {
+    "hello! how can i assist you today?": "नमस्ते! मैं आज आपकी क्या मदद कर सकता हूँ?",
+    "i want to drink water.": "मुझे पानी पीना है।",
+    "where is the consultation room?": "परामर्श कक्ष कहाँ है?",
+    "please wait here, the doctor will see you shortly.": "कृपया यहाँ प्रतीक्षा करें, डॉक्टर जल्द ही आपसे मिलेंगे।",
+    "thank you for understanding.": "समझने के लिए धन्यवाद।",
+    "good morning, please take a seat.": "सुप्रभात, कृपया बैठिए।",
+    "can you tell me what symptoms you are experiencing?": "क्या आप बता सकते हैं कि आपको क्या लक्षण महसूस हो रहे हैं?",
+    "the pharmacy is on the ground floor to your left.": "दवाखाना भूतल पर आपके बाईं ओर है।",
+    "is there anyone accompanying you today?": "क्या आज आपके साथ कोई आया है?",
+    "what is your name?": "आपका नाम क्या है?",
+    "my name is": "मेरा नाम है",
+    "i need help": "मुझे मदद चाहिए",
+    "call the doctor": "डॉक्टर को बुलाओ",
+    "i have pain": "मुझे दर्द हो रहा है",
+    "where is the hospital?": "अस्पताल कहाँ है?",
+    "thank you": "धन्यवाद",
+    "thanks": "धन्यवाद",
+    "please": "कृपया",
+    "yes": "हाँ",
+    "no": "नहीं",
+    "help": "मदद",
+    "water": "पानी",
+    "food": "खाना / भोजन",
+    "good": "अच्छा",
+    "name": "नाम",
+    "stop": "रुको",
+    "hello": "नमस्ते",
+    "hi": "नमस्ते",
+    "doctor": "डॉक्टर",
+    "hospital": "अस्पताल",
+    "medicine": "दवाई",
+    "pain": "दर्द",
+    "fever": "बुखार",
+    "emergency": "आपातकाल",
+  };
+
+  const getClientHindiFallback = (text: string): string | undefined => {
+    const clean = text.trim().toLowerCase();
+    if (CLIENT_HINDI_DICTIONARY[clean]) return CLIENT_HINDI_DICTIONARY[clean];
+    const stripped = clean.replace(/[.,?!]/g, '').trim();
+    if (CLIENT_HINDI_DICTIONARY[stripped]) return CLIENT_HINDI_DICTIONARY[stripped];
+    return undefined;
+  };
+
+  // Web Speech Recognition setup with simulation fallback
   const handleToggleMic = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setSpeechError('Web Speech Recognition API is not supported in this browser. Please use Chrome or Edge.');
+      setSpeechError('Web Speech API is not supported in this browser. You can type directly or click any quick phrase below.');
       return;
     }
 
@@ -80,11 +134,12 @@ export const CommunicationPage: React.FC = () => {
       recognition.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
         setInputText(transcript);
+        setActiveSender('hearing_user');
         setIsRecording(false);
       };
 
       recognition.onerror = (event: any) => {
-        setSpeechError(`Microphone error: ${event.error}`);
+        setSpeechError(`Microphone notice: ${event.error}. You can still type or click quick phrases to test dialogue.`);
         setIsRecording(false);
       };
 
@@ -94,24 +149,44 @@ export const CommunicationPage: React.FC = () => {
 
       recognition.start();
     } catch (err: any) {
-      setSpeechError(`Could not access microphone: ${err.message}`);
+      setSpeechError(`Could not access microphone: ${err.message}. Voice simulation and typing are available.`);
       setIsRecording(false);
     }
   };
 
-  const handleSendMessage = async (sender: 'deaf_user' | 'hearing_user') => {
+  const handleSimulateVoice = () => {
+    const sampleHearingVoices = [
+      "Good morning, please take a seat.",
+      "Can you tell me what symptoms you are experiencing?",
+      "The pharmacy is on the ground floor to your left.",
+      "Is there anyone accompanying you today?",
+    ];
+    const picked = sampleHearingVoices[Math.floor(Math.random() * sampleHearingVoices.length)];
+    setInputText(picked);
+    setActiveSender('hearing_user');
+    setSpeechError(null);
+  };
+
+  const handleSendMessage = async (senderOverride?: 'deaf_user' | 'hearing_user') => {
     if (!inputText.trim()) return;
 
     const currentText = inputText.trim();
+    const sender = senderOverride || activeSender;
     setInputText('');
 
     // Translate sentence via backend grammar and translation engine
     let translated: string | undefined = undefined;
-    try {
-      const res = await api.grammarCorrect(currentText.split(' '), selectedLanguage);
-      translated = res.translated_sentence;
-    } catch (err) {
-      console.warn('Translation engine error:', err);
+    if (selectedLanguage === 'hi') {
+      try {
+        const res = await api.grammarCorrect(currentText.split(' '), selectedLanguage);
+        translated = res.translated_sentence;
+      } catch (err) {
+        console.warn('Backend translation engine error, checking client fallback:', err);
+      }
+
+      if (!translated) {
+        translated = getClientHindiFallback(currentText);
+      }
     }
 
     const newMsg: ChatMessage = {
@@ -306,11 +381,53 @@ export const CommunicationPage: React.FC = () => {
 
         {/* Input Composer Section */}
         <div className="pt-4 border-t border-slate-800 space-y-3">
-          {/* Language Selection & Mic Status */}
-          <div className="flex items-center justify-between text-xs">
+          {/* Quick Phrases Bar */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+            <span className="text-[11px] text-slate-500 whitespace-nowrap">Quick Test Phrases:</span>
+            {QUICK_PHRASES.map((qp, idx) => (
+              <button
+                key={idx}
+                onClick={() => {
+                  setInputText(qp.text);
+                  setActiveSender(qp.sender);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 whitespace-nowrap text-[11px] transition-colors"
+              >
+                {qp.sender === 'deaf_user' ? '🤟 ' : '🗣️ '}{qp.text}
+              </button>
+            ))}
+          </div>
+
+          {/* Sender Role Toggle & Language Selection */}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setActiveSender('deaf_user')}
+                className={`px-3 py-1 rounded-lg font-medium transition-all ${
+                  activeSender === 'deaf_user'
+                    ? 'bg-teal-500 text-slate-950 font-bold shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                🤟 Signing/Typing (Deaf)
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSender('hearing_user')}
+                className={`px-3 py-1 rounded-lg font-medium transition-all ${
+                  activeSender === 'hearing_user'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                🗣️ Speaking (Hearing)
+              </button>
+            </div>
+
             <div className="flex items-center space-x-2 text-slate-400">
               <Languages className="w-4 h-4 text-teal-400" />
-              <span>Target Translation:</span>
+              <span>Translation:</span>
               <select
                 value={selectedLanguage}
                 onChange={(e) => setSelectedLanguage(e.target.value)}
@@ -320,13 +437,6 @@ export const CommunicationPage: React.FC = () => {
                 <option value="en">English (Original)</option>
               </select>
             </div>
-
-            {isRecording && (
-              <div className="flex items-center space-x-2 text-rose-400 text-xs font-semibold animate-pulse">
-                <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-                <span>Listening to Microphone...</span>
-              </div>
-            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -342,31 +452,48 @@ export const CommunicationPage: React.FC = () => {
               {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5 text-teal-400" />}
             </button>
 
+            <button
+              onClick={handleSimulateVoice}
+              className="p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold whitespace-nowrap"
+              title="Simulate speech from hearing interlocutor without microphone"
+            >
+              Simulate Voice
+            </button>
+
             <input
               type="text"
-              placeholder="Type sentence or speak into microphone..."
+              placeholder={
+                activeSender === 'deaf_user'
+                  ? 'Type as deaf user (will be read aloud to hearing user)...'
+                  : 'Type or speak as hearing person (will be translated for deaf user)...'
+              }
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  handleSendMessage('deaf_user');
+                  handleSendMessage();
                 }
               }}
               className="flex-1 px-4 py-3 rounded-2xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
             />
 
             <button
-              onClick={() => handleSendMessage('deaf_user')}
+              onClick={() => handleSendMessage()}
               disabled={!inputText.trim()}
-              className="px-4 py-3 rounded-2xl bg-teal-500 hover:bg-teal-400 disabled:opacity-40 text-slate-950 font-bold text-xs flex items-center space-x-1 shadow-md shadow-teal-500/20"
-              title="Send as Deaf User (Spoken via TTS)"
+              className={`px-4 py-3 rounded-2xl font-bold text-xs flex items-center space-x-1 shadow-md transition-all ${
+                activeSender === 'deaf_user'
+                  ? 'bg-teal-500 hover:bg-teal-400 text-slate-950 shadow-teal-500/20'
+                  : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/20'
+              } disabled:opacity-40`}
+              title="Send message"
             >
               <Send className="w-4 h-4" />
-              <span>Send & Speak</span>
+              <span>{activeSender === 'deaf_user' ? 'Send & Speak' : 'Send Voice Reply'}</span>
             </button>
           </div>
         </div>
       </div>
     </div>
+
   );
 };
